@@ -15,7 +15,11 @@ export const analysisResultSchema = z.object({
 
 export type AnalysisResult = z.infer<typeof analysisResultSchema>;
 
+export const analysisWindowSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(90)]);
+export type AnalysisWindow = z.infer<typeof analysisWindowSchema>;
+
 export const analysisRequestSchema = z.object({
+  days: analysisWindowSchema,
   timeZone: z.string().trim().min(1).max(80).refine((timeZone) => {
     try {
       new Intl.DateTimeFormat("vi-VN", { timeZone }).format();
@@ -30,5 +34,5 @@ export type AnalysisResponse = {
   analysis: AnalysisResult;
   activityCount: number;
   generatedAt: string;
-  cached: boolean;
+  windowDays: AnalysisWindow;
 };

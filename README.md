@@ -60,6 +60,6 @@ The tracker and dashboard initialize from `localStorage` immediately after hydra
 
 The breastfeeding timer is owned by the protected app shell rather than the tracking page. Its session is stored in `sessionStorage`, so it survives navigation and PWA background suspension but ends with the page/app session. Elapsed time is derived from timestamps instead of relying on background intervals, which mobile operating systems may throttle or pause. The timer is cleared only after a successful breastfeeding save or an explicit cancel action.
 
-## Notes
-- The Analysis tab is intentionally a placeholder for routine summaries, trends, and notable changes.
-- Breastfeeding timer UI is implemented as a deterministic prototype (+10 sec and play/pause visual state) rather than a background stopwatch. Replace `BreastFields` with a persistent timer state machine when live/background timing becomes in-scope.
+## Analysis
+
+The Analysis tab can summarize the latest 7, 14, 30, or 90 days through OpenRouter. Activity notes are included in the model input, while the baby's name and birth date are omitted. The latest result for each time window is persisted in MongoDB and is regenerated only after an explicit user action.

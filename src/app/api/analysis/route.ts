@@ -3,21 +3,23 @@ import { auth } from "@/auth";
 import { getBabyByOwner } from "@/modules/baby/baby.repository";
 import { listActivities } from "@/modules/activity/activity.repository";
 import { toActivityDto } from "@/modules/activity/activity.mapper";
-import { analysisRequestSchema, analysisResultSchema, type AnalysisResponse, type AnalysisResult } from "@/modules/analysis/analysis.dto";
+import {
+  analysisRequestSchema,
+  analysisResultSchema,
+  analysisWindowSchema,
+  type AnalysisResponse,
+  type AnalysisResult,
+} from "@/modules/analysis/analysis.dto";
 import { buildAnalysisDigest } from "@/modules/analysis/analysis";
+import { getSavedAnalysis, saveAnalysis } from "@/modules/analysis/analysis.repository";
 
 export const runtime = "nodejs";
 
-type CacheEntry = { expiresAt: number; response: AnalysisResponse };
-
 declare global {
-  var __babytrackAnalysisCache: Map<string, CacheEntry> | undefined;
   var __babytrackAnalysisRateLimit: Map<string, number> | undefined;
 }
 
-const analysisCache = global.__babytrackAnalysisCache ?? new Map<string, CacheEntry>();
 const analysisRateLimit = global.__babytrackAnalysisRateLimit ?? new Map<string, number>();
-global.__babytrackAnalysisCache = analysisCache;
 global.__babytrackAnalysisRateLimit = analysisRateLimit;
 
 function extractAnalysis(content: string): AnalysisResult {
@@ -59,11 +61,11 @@ async function requestOpenRouter(digest: ReturnType<typeof buildAnalysisDigest>,
         messages: [
           {
             role: "system",
-            content: `Bạn là trợ lý phân tích nhật ký sinh hoạt của em bé cho phụ huynh. Chỉ suy luận từ số liệu được cung cấp; không dùng chuẩn tăng trưởng bên ngoài, không chẩn đoán, không kết luận y khoa và không tạo dữ kiện không có trong đầu vào. Nếu dữ liệu ít hoặc có ngày trống, phải nói rõ giới hạn. Viết tiếng Việt ngắn gọn, bình tĩnh, dễ hiểu. Trả về duy nhất JSON hợp lệ theo cấu trúc: {"summary":"...","highlights":[{"title":"...","detail":"..."}],"patterns":[{"title":"...","detail":"..."}],"nextSteps":["..."]}. Mỗi mảng tối đa 4 mục. nextSteps chỉ là cách ghi chép hoặc điểm nên tiếp tục quan sát, không phải lời khuyên điều trị.`,
+            content: `Bạn là trợ lý phân tích nhật ký sinh hoạt của em bé cho phụ huynh. Chỉ suy luận từ số liệu và nội dung ghi chú được cung cấp; không dùng chuẩn tăng trưởng bên ngoài, không chẩn đoán, không kết luận y khoa và không tạo dữ kiện không có trong đầu vào. Ghi chú là quan sát do phụ huynh nhập, cần được xem như ngữ cảnh chứ không phải kết luận y tế. Nếu dữ liệu ít hoặc có ngày trống, phải nói rõ giới hạn. Viết tiếng Việt ngắn gọn, bình tĩnh, dễ hiểu. Trả về duy nhất JSON hợp lệ theo cấu trúc: {"summary":"...","highlights":[{"title":"...","detail":"..."}],"patterns":[{"title":"...","detail":"..."}],"nextSteps":["..."]}. Mỗi mảng tối đa 4 mục. nextSteps chỉ là cách ghi chép hoặc điểm nên tiếp tục quan sát, không phải lời khuyên điều trị.`,
           },
           {
             role: "user",
-            content: `Hãy phân tích bộ số liệu tổng hợp sau:\n${JSON.stringify(digest)}`,
+            content: `Hãy phân tích bộ số liệu và ghi chú nhật ký sau:\n${JSON.stringify(digest)}`,
           },
         ],
       }),
@@ -71,6 +73,25 @@ async function requestOpenRouter(digest: ReturnType<typeof buildAnalysisDigest>,
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function GET(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Bạn cần đăng nhập để xem phân tích." }, { status: 401 });
+  const rawDays = Number(new URL(request.url).searchParams.get("days"));
+  const parsedDays = analysisWindowSchema.safeParse(rawDays);
+  if (!parsedDays.success) return NextResponse.json({ error: "Mốc thời gian không hợp lệ." }, { status: 400 });
+  const baby = await getBabyByOwner(session.user.id);
+  if (!baby?._id) return NextResponse.json({ error: "Chưa có hồ sơ của bé để phân tích." }, { status: 409 });
+  const saved = await getSavedAnalysis(session.user.id, baby._id.toHexString(), parsedDays.data);
+  if (!saved) return NextResponse.json({ result: null }, { headers: { "Cache-Control": "private, no-store" } });
+  const result: AnalysisResponse = {
+    analysis: saved.analysis,
+    activityCount: saved.activityCount,
+    generatedAt: saved.generatedAt.toISOString(),
+    windowDays: saved.windowDays,
+  };
+  return NextResponse.json({ result }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -88,30 +109,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
   }
   const parsedInput = analysisRequestSchema.safeParse(input);
-  if (!parsedInput.success) return NextResponse.json({ error: "Không xác định được múi giờ của thiết bị." }, { status: 400 });
+  if (!parsedInput.success) return NextResponse.json({ error: "Mốc thời gian hoặc múi giờ không hợp lệ." }, { status: 400 });
 
   const baby = await getBabyByOwner(session.user.id);
   if (!baby?._id) return NextResponse.json({ error: "Chưa có hồ sơ của bé để phân tích." }, { status: 409 });
 
-  const docs = await listActivities(session.user.id, baby._id.toHexString(), 300);
+  const docs = await listActivities(session.user.id, baby._id.toHexString(), 5000);
   const activities = docs.map(toActivityDto);
-  const digest = buildAnalysisDigest(activities, parsedInput.data.timeZone);
+  const digest = buildAnalysisDigest(activities, parsedInput.data.timeZone, new Date(), parsedInput.data.days);
   if (digest.activityCount === 0) {
-    return NextResponse.json({ error: "Chưa có hoạt động nào trong 14 ngày gần nhất để phân tích." }, { status: 422 });
-  }
-
-  const latestUpdate = activities.reduce((latest, activity) => activity.updatedAt > latest ? activity.updatedAt : latest, "");
-  const cacheKey = `${baby._id.toHexString()}:${model}:${parsedInput.data.timeZone}:${digest.activityCount}:${latestUpdate}`;
-  const cached = analysisCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json({ ...cached.response, cached: true }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ error: `Chưa có hoạt động nào trong ${parsedInput.data.days} ngày gần nhất để phân tích.` }, { status: 422 });
   }
 
   const nextAllowedAt = analysisRateLimit.get(session.user.id) ?? 0;
   if (nextAllowedAt > Date.now()) {
     const retryAfter = Math.max(1, Math.ceil((nextAllowedAt - Date.now()) / 1000));
     return NextResponse.json(
-      { error: `Vui lòng chờ ${retryAfter} giây trước khi phân tích lại.` },
+      { error: `Vui lòng chờ ${retryAfter} giây trước khi phân tích tiếp.` },
       { status: 429, headers: { "Retry-After": String(retryAfter) } },
     );
   }
@@ -150,17 +164,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Model không trả về nội dung phân tích." }, { status: 502 });
   }
 
+  const generatedAt = new Date();
   const result: AnalysisResponse = {
     analysis: extractAnalysis(content),
     activityCount: digest.activityCount,
-    generatedAt: new Date().toISOString(),
-    cached: false,
+    generatedAt: generatedAt.toISOString(),
+    windowDays: parsedInput.data.days,
   };
-  analysisCache.set(cacheKey, { expiresAt: Date.now() + 10 * 60_000, response: result });
-  if (analysisCache.size > 100) {
-    const oldestKey = analysisCache.keys().next().value;
-    if (oldestKey) analysisCache.delete(oldestKey);
-  }
+  await saveAnalysis({
+    ownerId: session.user.id,
+    babyId: baby._id.toHexString(),
+    windowDays: parsedInput.data.days,
+    timeZone: parsedInput.data.timeZone,
+    model,
+    analysis: result.analysis,
+    activityCount: result.activityCount,
+    generatedAt,
+  });
 
   return NextResponse.json(result, { headers: { "Cache-Control": "private, no-store" } });
 }

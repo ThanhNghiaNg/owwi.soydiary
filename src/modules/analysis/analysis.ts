@@ -117,6 +117,9 @@ export function buildAnalysisDigest(activities: ActivityDto[], timeZone: string,
       bottleMlPerSession: bottleAmounts.length ? Math.round(average(bottleAmounts) ?? 0) : null,
       sleepHoursPerSession: sleepDurations.length ? rounded(average(sleepDurations) ?? 0) : null,
     },
+    notes: included
+      .filter((activity) => activity.note.trim())
+      .map((activity) => ({ occurredAt: activity.occurredAt, type: activity.type, note: activity.note })),
     daily: rows,
   };
 }

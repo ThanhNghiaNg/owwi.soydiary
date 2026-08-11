@@ -1,0 +1,1 @@
+export default function Loading() { return <div className="min-h-dvh animate-pulse bg-[#f4ebff]"><div className="h-44 bg-[#9b55ee]"/><div className="mx-5 -mt-8 h-72 rounded-3xl bg-white shadow"/></div>; }

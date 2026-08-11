@@ -1,0 +1,27 @@
+import { ObjectId, type Filter } from "mongodb";
+import { db } from "@/lib/mongodb";
+import type { ActivityDocument } from "./activity.model";
+import type { ActivityInput, ActivityType } from "./activity.dto";
+
+const collection = async () => (await db()).collection<ActivityDocument>("activities");
+
+export async function ensureActivityIndexes() {
+  const col = await collection();
+  await Promise.all([
+    col.createIndex({ ownerId: 1, babyId: 1, occurredAt: -1 }),
+    col.createIndex({ ownerId: 1, babyId: 1, type: 1, occurredAt: -1 }),
+  ]);
+}
+
+export async function listActivities(ownerId: string, babyId: string, limit = 50, type?: ActivityType) {
+  const query: Filter<ActivityDocument> = { ownerId, babyId: new ObjectId(babyId) };
+  if (type) query.type = type;
+  return (await collection()).find(query).sort({ occurredAt: -1 }).limit(limit).toArray();
+}
+
+export async function createActivity(ownerId: string, babyId: string, input: ActivityInput) {
+  const now = new Date();
+  const doc = { ...input, ownerId, babyId: new ObjectId(babyId), createdAt: now, updatedAt: now } as ActivityDocument;
+  const result = await (await collection()).insertOne(doc);
+  return { ...doc, _id: result.insertedId };
+}

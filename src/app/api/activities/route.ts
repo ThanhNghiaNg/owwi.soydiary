@@ -1,0 +1,33 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { getBabyByOwner } from "@/modules/baby/baby.repository";
+import { activityInputSchema, type ActivityType } from "@/modules/activity/activity.dto";
+import { createActivity, listActivities } from "@/modules/activity/activity.repository";
+import { toActivityDto } from "@/modules/activity/activity.mapper";
+
+const allowedTypes = new Set<ActivityType>(["breastfeeding","bottle","pump","diaper","sleep","tummy","solid","custom"]);
+
+export async function GET(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const baby = await getBabyByOwner(session.user.id);
+  if (!baby?._id) return NextResponse.json({ activities: [] });
+  const rawType = request.nextUrl.searchParams.get("type");
+  const type = rawType && allowedTypes.has(rawType as ActivityType) ? rawType as ActivityType : undefined;
+  const docs = await listActivities(session.user.id, baby._id.toHexString(), 100, type);
+  return NextResponse.json({ activities: docs.map(toActivityDto), syncedAt: new Date().toISOString() });
+}
+
+export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const baby = await getBabyByOwner(session.user.id);
+  if (!baby?._id) return NextResponse.json({ error: "Onboarding required" }, { status: 409 });
+  const parsed = activityInputSchema.safeParse(await request.json());
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (parsed.data.type === "sleep" && new Date(parsed.data.endedAt) < new Date(parsed.data.occurredAt)) {
+    return NextResponse.json({ error: "Wake time must be after sleep time" }, { status: 400 });
+  }
+  const doc = await createActivity(session.user.id, baby._id.toHexString(), parsed.data);
+  return NextResponse.json({ activity: toActivityDto(doc) }, { status: 201 });
+}

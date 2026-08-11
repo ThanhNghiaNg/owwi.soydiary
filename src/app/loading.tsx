@@ -1,0 +1,1 @@
+export default function RootLoading(){ return <div className="min-h-dvh min-w-[300px] bg-[#f4ebff]"><div className="h-40 animate-pulse bg-[#9b55ee]"/><div className="mx-auto mt-8 h-64 w-[90%] max-w-md animate-pulse rounded-3xl bg-white shadow-sm"/></div>; }

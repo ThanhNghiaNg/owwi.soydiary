@@ -1,0 +1,2 @@
+import { TopHeader } from "@/components/top-header";
+export default function AiPage(){ return <div className="min-h-dvh bg-[#f6f2fb]"><TopHeader title="AI Analysis" subtitle="Phase sau"/><div className="p-5"><div className="rounded-3xl bg-white p-7 text-center shadow-sm"><div className="text-5xl">✦</div><h1 className="mt-4 text-2xl font-black">AI chưa nằm trong scope hiện tại</h1><p className="mt-3 text-zinc-500">Tab đã được giữ chỗ để thêm phân tích routine, pattern và insight sau.</p></div></div></div>; }

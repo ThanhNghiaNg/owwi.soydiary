@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { AlertTriangleIcon, XIcon } from "./icons";
 
 type ConfirmDialogProps = {
@@ -12,6 +12,7 @@ type ConfirmDialogProps = {
   confirmDisabled?: boolean;
   cancelDisabled?: boolean;
   tone?: "danger" | "primary";
+  icon?: ReactNode;
   onConfirm: () => void;
   onClose: () => void;
 };
@@ -25,6 +26,7 @@ export function ConfirmDialog({
   confirmDisabled = false,
   cancelDisabled = false,
   tone = "primary",
+  icon,
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
@@ -92,10 +94,10 @@ export function ConfirmDialog({
       </button>
 
       <div className={`grid h-12 w-12 place-items-center rounded-2xl ${tone === "danger" ? "bg-red-50 text-[var(--color-danger)]" : "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]"}`} aria-hidden="true">
-        <AlertTriangleIcon className="h-6 w-6" />
+        {icon ?? <AlertTriangleIcon className="h-6 w-6" />}
       </div>
       <h2 id={titleId} className="mt-5 pr-10 text-2xl font-black tracking-tight">{title}</h2>
-      <p id={descriptionId} className="mt-2 text-sm leading-6 text-[var(--color-muted)]">{description}</p>
+      <p id={descriptionId} aria-live="polite" className="mt-2 text-sm leading-6 text-[var(--color-muted)]">{description}</p>
 
       <div className="mt-6 grid grid-cols-2 gap-3">
         <button ref={cancelRef} onClick={onClose} disabled={cancelDisabled} className="min-h-12 rounded-2xl border border-[var(--color-border)] bg-white px-4 font-extrabold text-[var(--color-ink)] transition-colors hover:bg-[#f7f5f9] active:bg-[#eeeaf2] disabled:cursor-not-allowed disabled:opacity-50">{cancelLabel}</button>

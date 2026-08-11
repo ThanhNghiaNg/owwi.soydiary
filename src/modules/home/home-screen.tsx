@@ -9,8 +9,11 @@ import { babyAgeSentence, babyAgeText, formatClock, relativeFromNow } from "@/li
 import { ArrowUpRightIcon, CheckIcon } from "@/components/icons";
 import { useHomeData } from "./use-home-data";
 import { activityDetail } from "@/modules/activity/activity-format";
+import { ProfileMenu } from "@/components/profile-menu";
 
-export function HomeScreen({ serverBaby, serverActivities }: { serverBaby: BabyDto; serverActivities: ActivityDto[] }) {
+type AccountSummary = { name: string | null | undefined; email: string | null | undefined };
+
+export function HomeScreen({ serverBaby, serverActivities, account }: { serverBaby: BabyDto; serverActivities: ActivityDto[]; account: AccountSummary }) {
   const { baby, activities, syncing } = useHomeData(serverBaby, serverActivities);
   const b = baby ?? serverBaby;
 
@@ -21,9 +24,7 @@ export function HomeScreen({ serverBaby, serverActivities }: { serverBaby: BabyD
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">Baby&apos;s Diary</p>
           <p className="mt-0.5 text-xl font-extrabold tracking-tight">Nhật ký của {b.name}</p>
         </div>
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15" aria-hidden="true">
-          <span className="text-lg font-black">{b.name.trim().slice(0, 1).toUpperCase()}</span>
-        </div>
+        <ProfileMenu accountName={account.name} accountEmail={account.email} />
       </div>
     </header>
 
@@ -99,6 +100,7 @@ export function HomeScreen({ serverBaby, serverActivities }: { serverBaby: BabyD
           </Link>
         </div>
       </section>
+
     </main>
   </div>;
 }

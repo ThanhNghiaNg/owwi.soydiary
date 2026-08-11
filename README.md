@@ -1,6 +1,6 @@
-# BabyTrack Web
+# Baby's Diary Web
 
-Mobile-first Next.js + Tailwind reconstruction of the supplied baby-tracker screens.
+Mobile-first Next.js + Tailwind diary for tracking a baby's daily routine.
 
 ## Stack
 - Next.js App Router + React + TypeScript strict mode

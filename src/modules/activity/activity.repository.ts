@@ -43,3 +43,13 @@ export async function updateActivity(ownerId: string, babyId: string, activityId
     { returnDocument: "after" },
   );
 }
+
+export async function deleteActivity(ownerId: string, babyId: string, activityId: string) {
+  if (!ObjectId.isValid(activityId)) return false;
+  const result = await (await collection()).deleteOne({
+    _id: new ObjectId(activityId),
+    ownerId,
+    babyId: new ObjectId(babyId),
+  });
+  return result.deletedCount === 1;
+}

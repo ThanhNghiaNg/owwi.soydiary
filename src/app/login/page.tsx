@@ -12,7 +12,7 @@ export default async function LoginPage() {
         <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-[1.35rem] bg-[var(--color-primary)] text-white shadow-[0_10px_24px_rgba(109,76,196,0.2)]">
           <HeartIcon className="h-8 w-8" />
         </div>
-        <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-[var(--color-primary)]">BabyTrack</p>
+        <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-[var(--color-primary)]">Baby&apos;s Diary</p>
         <h1 className="mt-2 text-3xl font-black tracking-[-0.04em]">Mọi khoảnh khắc của bé,<br />gọn trong một nơi</h1>
         <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-[var(--color-muted)]">Ghi lại ăn, ngủ, thay tã và nhịp sinh hoạt mỗi ngày thật nhanh.</p>
       </div>

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import type { ActivityDto, ActivityInput, ActivityType } from "./activity.dto";
 import { getActivityMeta } from "./activity.registry";
 import { ActivityAsset } from "./activity-asset";
-import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon } from "@/components/icons";
+import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon, TrashIcon } from "@/components/icons";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
 import { cacheKeys, readCache, writeCache } from "@/lib/cache";
 import {
@@ -69,7 +70,7 @@ function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
   return { leftSeconds: 0, rightSeconds: 0 };
 }
 
-export function ActivityEditor({ type, babyId, activity }: { type: ActivityType; babyId: string; activity?: ActivityDto }) {
+export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: { type: ActivityType; babyId: string; activity?: ActivityDto; returnHref?: string }) {
   const router = useRouter();
   const meta = getActivityMeta(type);
   const storedTimer = useBreastfeedingTimer();
@@ -84,6 +85,8 @@ export function ActivityEditor({ type, babyId, activity }: { type: ActivityType;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [fields, setFields] = useState<Fields>(() => initialFields(type, activity));
 
   const timerDate = timer ? new Date(timer.occurredAt) : null;
@@ -150,6 +153,31 @@ export function ActivityEditor({ type, babyId, activity }: { type: ActivityType;
     }
   }
 
+  async function remove() {
+    if (!activity || deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/activities/${activity.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        setDeleteOpen(false);
+        setError("Chưa thể xóa hoạt động. Bạn thử lại sau nhé.");
+        return;
+      }
+      const keys = cacheKeys(babyId);
+      const cached = readCache<ActivityDto[]>(keys.activities) ?? [];
+      writeCache(keys.activities, cached.filter((item) => item.id !== activity.id));
+      if ("vibrate" in navigator) navigator.vibrate(10);
+      router.replace(returnHref);
+      router.refresh();
+    } catch {
+      setDeleteOpen(false);
+      setError("Mất kết nối. Hoạt động chưa bị xóa, bạn thử lại nhé.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function changeDate(nextDate: string) {
     setDate(nextDate);
     setSaved(false);
@@ -171,7 +199,7 @@ export function ActivityEditor({ type, babyId, activity }: { type: ActivityType;
   return <div className="app-page pb-4">
     <header className="rounded-b-[2rem] bg-[var(--color-primary)] px-3 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white">
       <div className="flex items-center">
-        <button onClick={() => router.back()} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition-colors hover:bg-white/15 active:bg-white/20" aria-label="Quay lại">
+        <button onClick={() => editing ? router.push(returnHref) : router.back()} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition-colors hover:bg-white/15 active:bg-white/20" aria-label="Quay lại">
           <ChevronLeft className="h-7 w-7" />
         </button>
         <div className="min-w-0 flex-1 text-center">
@@ -224,6 +252,9 @@ export function ActivityEditor({ type, babyId, activity }: { type: ActivityType;
 
       {error ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error}</p> : null}
       {saved ? <p role="status" className="rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-center text-sm font-extrabold text-[var(--color-accent)]">Đã lưu thay đổi</p> : null}
+      {editing ? <button type="button" onClick={() => setDeleteOpen(true)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 text-sm font-extrabold text-[var(--color-danger)] transition-colors hover:bg-red-50 active:bg-red-100">
+        <TrashIcon className="h-5 w-5" /> Xóa hoạt động
+      </button> : null}
     </main>
 
     <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto w-full min-w-[300px] max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-4 pt-3 backdrop-blur-xl sm:px-6">
@@ -231,6 +262,18 @@ export function ActivityEditor({ type, babyId, activity }: { type: ActivityType;
         {busy ? "Đang lưu…" : editing ? saved ? "Đã lưu" : "Lưu thay đổi" : "Lưu hoạt động"}
       </button>
     </div>
+    <ConfirmDialog
+      open={deleteOpen}
+      title="Xóa hoạt động này?"
+      description={`${meta.label} sẽ bị xóa khỏi lịch sử và các số liệu thống kê. Thao tác này không thể hoàn tác.`}
+      confirmLabel={deleting ? "Đang xóa…" : "Xóa hoạt động"}
+      confirmDisabled={deleting}
+      cancelDisabled={deleting}
+      cancelLabel="Giữ lại"
+      tone="danger"
+      onConfirm={() => { void remove(); }}
+      onClose={() => { if (!deleting) setDeleteOpen(false); }}
+    />
   </div>;
 }
 

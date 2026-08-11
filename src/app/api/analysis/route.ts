@@ -50,7 +50,7 @@ async function requestOpenRouter(digest: ReturnType<typeof buildAnalysisDigest>,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "X-Title": "BabyTrack",
+        "X-Title": "Baby's Diary",
       },
       signal: controller.signal,
       body: JSON.stringify({

@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "BabyTrack – Nhật ký của bé",
-    short_name: "BabyTrack",
+    name: "Baby's Diary – Nhật ký của bé",
+    short_name: "Baby's Diary",
     description: "Theo dõi ăn, ngủ, thay tã và nhịp sinh hoạt của bé.",
     start_url: "/app",
     display: "standalone",

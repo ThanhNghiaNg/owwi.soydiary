@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BabyTrack",
+  title: "Baby's Diary",
   description: "Theo dõi nhịp sinh hoạt của bé thật nhanh và nhẹ nhàng",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.png" },
   appleWebApp: {
     capable: true,
-    title: "BabyTrack",
+    title: "Baby's Diary",
     statusBarStyle: "default",
   },
 };

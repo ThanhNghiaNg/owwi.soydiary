@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getBabyByOwner } from "@/modules/baby/baby.repository";
 import { activityInputSchema } from "@/modules/activity/activity.dto";
-import { getActivityById, updateActivity } from "@/modules/activity/activity.repository";
+import { deleteActivity, getActivityById, updateActivity } from "@/modules/activity/activity.repository";
 import { toActivityDto } from "@/modules/activity/activity.mapper";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,4 +22,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const updated = await updateActivity(session.user.id, baby._id.toHexString(), id, parsed.data);
   if (!updated) return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   return NextResponse.json({ activity: toActivityDto(updated) });
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const baby = await getBabyByOwner(session.user.id);
+  if (!baby?._id) return NextResponse.json({ error: "Onboarding required" }, { status: 409 });
+  const { id } = await params;
+  const deleted = await deleteActivity(session.user.id, baby._id.toHexString(), id);
+  if (!deleted) return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+  return NextResponse.json({ deleted: true });
 }

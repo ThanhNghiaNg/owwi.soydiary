@@ -18,7 +18,7 @@ export function HomeScreen({ serverBaby, serverActivities }: { serverBaby: BabyD
     <header className="rounded-b-[2rem] bg-[var(--color-primary)] px-5 pb-7 pt-[max(1.25rem,env(safe-area-inset-top))] text-white">
       <div className="mx-auto flex max-w-lg items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">BabyTrack</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">Baby&apos;s Diary</p>
           <p className="mt-0.5 text-xl font-extrabold tracking-tight">Nhật ký của {b.name}</p>
         </div>
         <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15" aria-hidden="true">
@@ -70,7 +70,7 @@ export function HomeScreen({ serverBaby, serverActivities }: { serverBaby: BabyD
         <div className="space-y-3">
           {activities.slice(0, 3).map((activity) => {
             const meta = getActivityMeta(activity.type);
-            return <Link key={activity.id} href={`/app/activity/${activity.id}`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group block rounded-[1.5rem]">
+            return <Link key={activity.id} href={`/app/activity/${activity.id}?from=home`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group block rounded-[1.5rem]">
             <article className="surface-card flex items-center gap-3 overflow-hidden p-3.5 transition duration-200 group-hover:border-[var(--color-primary)] group-active:bg-[var(--color-primary-soft)]">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl" style={{ backgroundColor: `${meta.accent}18` }}>
                 <ActivityAsset type={activity.type} size={42} className="h-10 w-10" />

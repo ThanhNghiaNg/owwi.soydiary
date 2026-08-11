@@ -146,7 +146,7 @@ function Timeline({ groups, filtered, hasMore, onLoadMore }: { groups: ReturnTyp
       <div className="space-y-3">
         {group.activities.map((activity) => {
           const meta = getActivityMeta(activity.type);
-          return <Link key={activity.id} href={`/app/activity/${activity.id}`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group block rounded-[1.5rem]">
+          return <Link key={activity.id} href={`/app/activity/${activity.id}?from=history`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group block rounded-[1.5rem]">
           <article className="surface-card relative flex min-h-[92px] overflow-hidden transition duration-200 group-hover:border-[var(--color-primary)] group-active:bg-[var(--color-primary-soft)]">
             <span className="w-1.5 shrink-0" style={{ backgroundColor: meta.accent }} aria-hidden="true" />
             <div className="grid w-[76px] shrink-0 place-items-center" style={{ backgroundColor: `${meta.accent}12` }}>

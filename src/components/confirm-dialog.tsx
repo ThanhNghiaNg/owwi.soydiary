@@ -9,6 +9,8 @@ type ConfirmDialogProps = {
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmDisabled?: boolean;
+  cancelDisabled?: boolean;
   tone?: "danger" | "primary";
   onConfirm: () => void;
   onClose: () => void;
@@ -20,6 +22,8 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Xác nhận",
   cancelLabel = "Quay lại",
+  confirmDisabled = false,
+  cancelDisabled = false,
   tone = "primary",
   onConfirm,
   onClose,
@@ -83,7 +87,7 @@ export function ConfirmDialog({
       aria-describedby={descriptionId}
       className="dialog-panel safe-bottom relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-t-[2rem] border border-[var(--color-border)] bg-white px-6 pb-6 pt-5 shadow-[0_24px_64px_rgba(31,22,43,0.28)] sm:rounded-[2rem]"
     >
-      <button onClick={onClose} aria-label="Đóng hộp thoại" className="absolute right-4 top-4 grid h-12 w-12 place-items-center rounded-xl text-[var(--color-muted)] transition-colors hover:bg-[#f4f1f7] active:bg-[#eae4ef]">
+      <button onClick={onClose} disabled={cancelDisabled} aria-label="Đóng hộp thoại" className="absolute right-4 top-4 grid h-12 w-12 place-items-center rounded-xl text-[var(--color-muted)] transition-colors hover:bg-[#f4f1f7] active:bg-[#eae4ef] disabled:cursor-not-allowed disabled:opacity-50">
         <XIcon className="h-5 w-5" />
       </button>
 
@@ -94,8 +98,8 @@ export function ConfirmDialog({
       <p id={descriptionId} className="mt-2 text-sm leading-6 text-[var(--color-muted)]">{description}</p>
 
       <div className="mt-6 grid grid-cols-2 gap-3">
-        <button ref={cancelRef} onClick={onClose} className="min-h-12 rounded-2xl border border-[var(--color-border)] bg-white px-4 font-extrabold text-[var(--color-ink)] transition-colors hover:bg-[#f7f5f9] active:bg-[#eeeaf2]">{cancelLabel}</button>
-        <button onClick={onConfirm} className={`min-h-12 rounded-2xl px-4 font-extrabold transition-colors ${confirmClass}`}>{confirmLabel}</button>
+        <button ref={cancelRef} onClick={onClose} disabled={cancelDisabled} className="min-h-12 rounded-2xl border border-[var(--color-border)] bg-white px-4 font-extrabold text-[var(--color-ink)] transition-colors hover:bg-[#f7f5f9] active:bg-[#eeeaf2] disabled:cursor-not-allowed disabled:opacity-50">{cancelLabel}</button>
+        <button onClick={onConfirm} disabled={confirmDisabled} className={`min-h-12 rounded-2xl px-4 font-extrabold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${confirmClass}`}>{confirmLabel}</button>
       </div>
     </div>
   </div>;

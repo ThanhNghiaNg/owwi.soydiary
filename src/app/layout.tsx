@@ -3,15 +3,21 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BabyTrack",
-  description: "Fast, mobile-first baby routine tracker",
+  description: "Theo dõi nhịp sinh hoạt của bé thật nhanh và nhẹ nhàng",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.png" },
+  appleWebApp: {
+    capable: true,
+    title: "BabyTrack",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#9b55ee",
+  themeColor: "#6d4cc4",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

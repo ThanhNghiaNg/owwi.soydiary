@@ -7,5 +7,5 @@ export default async function OnboardingPage() {
   if (!session?.user?.id) redirect("/login");
   const existing = await getBabyByOwner(session.user.id);
   if (existing) redirect("/app");
-  return <main className="min-h-dvh min-w-[300px] bg-[#f4ebff] p-5 pt-[max(2rem,env(safe-area-inset-top))]"><div className="mx-auto max-w-md rounded-[2rem] bg-white p-6 shadow-xl"><h1 className="text-3xl font-black">Bé nhà bạn</h1><p className="mt-2 text-zinc-500">Chỉ cần 2 thông tin để bắt đầu.</p><OnboardingForm /></div></main>;
+  return <main className="min-h-dvh min-w-[300px] bg-[var(--color-canvas)] p-5 pt-[max(2rem,env(safe-area-inset-top))]"><div className="surface-card mx-auto max-w-md p-6 sm:p-8"><div className="mb-2 inline-flex rounded-full bg-[var(--color-primary-soft)] px-3 py-1.5 text-xs font-extrabold text-[var(--color-primary-strong)]">Bước cuối cùng</div><h1 className="mt-4 text-3xl font-black tracking-[-0.04em]">Bé nhà bạn</h1><p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">Thêm hai thông tin cơ bản để cá nhân hóa nhật ký của bé.</p><OnboardingForm /></div></main>;
 }

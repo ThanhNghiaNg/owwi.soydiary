@@ -2,17 +2,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BabyDto } from "@/modules/baby/baby.dto";
 import type { ActivityDto } from "@/modules/activity/activity.dto";
-import { cacheKeys, readCache, writeCache } from "@/lib/cache";
+import { cacheKeys, writeCache } from "@/lib/cache";
 
 type HomeData = { baby: BabyDto | null; activities: ActivityDto[] };
-export function useHomeData(serverBaby: BabyDto) {
+export function useHomeData(serverBaby: BabyDto, serverActivities: ActivityDto[]) {
   const keys = useMemo(() => cacheKeys(serverBaby.id), [serverBaby.id]);
-  const cachedBaby = readCache<BabyDto>(keys.baby);
-  const cachedActivities = readCache<ActivityDto[]>(keys.activities);
-  const [data, setData] = useState<HomeData>({ baby: cachedBaby ?? serverBaby, activities: cachedActivities ?? [] });
+  const [data, setData] = useState<HomeData>({ baby: serverBaby, activities: serverActivities });
   const [syncing, setSyncing] = useState(true);
   const sync = useCallback(async () => {
-    setSyncing(true);
     try {
       const [babyRes, activitiesRes] = await Promise.all([fetch("/api/baby", { cache: "no-store" }), fetch("/api/activities", { cache: "no-store" })]);
       if (!babyRes.ok || !activitiesRes.ok) return;
@@ -23,6 +20,10 @@ export function useHomeData(serverBaby: BabyDto) {
       setData({ baby: babyJson.baby ?? serverBaby, activities: activitiesJson.activities });
     } finally { setSyncing(false); }
   }, [keys.activities, keys.baby, serverBaby]);
-  useEffect(() => { writeCache(keys.baby, serverBaby); void sync(); }, [serverBaby, sync]);
+  useEffect(() => {
+    writeCache(keys.baby, serverBaby);
+    writeCache(keys.activities, serverActivities);
+    void sync();
+  }, [keys.activities, keys.baby, serverActivities, serverBaby, sync]);
   return { ...data, syncing, sync };
 }

@@ -18,9 +18,11 @@ AUTH_GOOGLE_ID=...
 AUTH_GOOGLE_SECRET=...
 AUTH_SECRET=...
 MONGODB_URI=...
+OPEN_ROUTER_KEY=...
+OPEN_ROUTER_MODEL=...
 ```
 
-`AUTH_SECRET` is additionally required by Auth.js. Generate a strong random value (Auth.js CLI can generate one).
+`AUTH_SECRET` is additionally required by Auth.js. Generate a strong random value (Auth.js CLI can generate one). The two `OPEN_ROUTER_*` values power the server-side Analysis feature; the key is never sent to the browser.
 
 For Google OAuth, add these authorized redirect URIs:
 - local: `http://localhost:3000/api/auth/callback/google`
@@ -54,6 +56,10 @@ All activity records share one collection with a typed `type` discriminator. Add
 ## Cache-first behavior
 The tracker and dashboard initialize from `localStorage` immediately after hydration. In parallel they fetch `/api/baby` and `/api/activities` with `cache: no-store`, replace stale cached data, and keep the UI responsive. Successful writes are optimistically inserted into the local cache before returning to the timeline. `loading.tsx` provides a non-blank route shell while protected server layouts resolve auth/onboarding.
 
+## Breastfeeding timer
+
+The breastfeeding timer is owned by the protected app shell rather than the tracking page. Its session is stored in `sessionStorage`, so it survives navigation and PWA background suspension but ends with the page/app session. Elapsed time is derived from timestamps instead of relying on background intervals, which mobile operating systems may throttle or pause. The timer is cleared only after a successful breastfeeding save or an explicit cancel action.
+
 ## Notes
-- The AI tab is intentionally a placeholder.
+- The Analysis tab is intentionally a placeholder for routine summaries, trends, and notable changes.
 - Breastfeeding timer UI is implemented as a deterministic prototype (+10 sec and play/pause visual state) rather than a background stopwatch. Replace `BreastFields` with a persistent timer state machine when live/background timing becomes in-scope.

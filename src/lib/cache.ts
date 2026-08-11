@@ -1,5 +1,5 @@
 export function cacheKeys(babyId: string) {
-  return { baby: `babytrack:baby:v1:${babyId}`, activities: `babytrack:activities:v1:${babyId}` } as const;
+  return { baby: `babytrack:baby:v1:${babyId}`, activities: `babytrack:activities:v2:${babyId}` } as const;
 }
 export function readCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;

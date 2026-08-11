@@ -1,87 +1,379 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ActivityInput, ActivityType } from "./activity.dto";
+import type { ActivityDto, ActivityInput, ActivityType } from "./activity.dto";
 import { getActivityMeta } from "./activity.registry";
-import { CalendarIcon, ClockIcon, ChevronLeft } from "@/components/icons";
+import { ActivityAsset } from "./activity-asset";
+import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon } from "@/components/icons";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
 import { cacheKeys, readCache, writeCache } from "@/lib/cache";
-import type { ActivityDto } from "./activity.dto";
+import {
+  clearBreastfeedingTimer,
+  formatTimerDuration,
+  getBreastfeedingElapsed,
+  toggleBreastSide,
+  updateBreastfeedingDraft,
+  useBreastfeedingTimer,
+  useTimerNow,
+  type BreastfeedingTimerState,
+} from "./breastfeeding-timer";
 
 type Fields = Record<string, string | number>;
-const colors = ["Yellow","Brown","Black","Green","Red","Orange","White"];
-const consistencies = ["Sticky","Mushy","Soft","Well-formed","Watery","Hard","Chalky"];
+type PickOption = { value: string; label: string };
 
-export function ActivityEditor({ type, babyId }: { type: ActivityType; babyId: string }) {
-  const router = useRouter(); const meta = getActivityMeta(type);
-  const [date, setDate] = useState(localDateInputValue()); const [time, setTime] = useState(localTimeInputValue());
-  const [note, setNote] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const [fields, setFields] = useState<Fields>(() => type === "bottle" ? { amountOz: 2.9, milkType: "breast-milk" } : type === "pump" ? { leftOz: 3, rightOz: 1.4 } : type === "diaper" ? { diaperType: "poop", color: "Brown", consistency: "Soft" } : type === "tummy" ? { durationMinutes: 0, label: "Tummy Time" } : type === "solid" ? { label: "Solid Food" } : type === "custom" ? { label: "Custom" } : type === "sleep" ? { endDate: localDateInputValue(), endTime: localTimeInputValue() } : { leftSeconds: 0, rightSeconds: 0 });
-  const totalBreast = Number(fields.leftSeconds ?? 0) + Number(fields.rightSeconds ?? 0);
+const colors: PickOption[] = [
+  { value: "Yellow", label: "Vàng" }, { value: "Brown", label: "Nâu" },
+  { value: "Black", label: "Đen" }, { value: "Green", label: "Xanh lá" },
+  { value: "Red", label: "Đỏ" }, { value: "Orange", label: "Cam" },
+  { value: "White", label: "Trắng" },
+];
+
+const consistencies: PickOption[] = [
+  { value: "Sticky", label: "Dính" }, { value: "Mushy", label: "Nhão" },
+  { value: "Soft", label: "Mềm" }, { value: "Well-formed", label: "Thành khuôn" },
+  { value: "Watery", label: "Lỏng" }, { value: "Hard", label: "Cứng" },
+  { value: "Chalky", label: "Bột" },
+];
+
+const diaperTypes: PickOption[] = [
+  { value: "pee", label: "Tã ướt" }, { value: "poop", label: "Tã bẩn" },
+  { value: "mixed", label: "Cả hai" }, { value: "dry", label: "Tã khô" },
+];
+
+function screenTitle(type: ActivityType) {
+  if (type === "breastfeeding" || type === "bottle" || type === "pump") return "Ghi cữ ăn";
+  if (type === "diaper") return "Ghi lần thay tã";
+  if (type === "sleep") return "Ghi giấc ngủ";
+  return "Ghi hoạt động";
+}
+
+function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
+  if (activity?.type === "breastfeeding") return { leftSeconds: activity.leftSeconds, rightSeconds: activity.rightSeconds };
+  if (activity?.type === "bottle") return { amountMl: activity.amountMl, milkType: activity.milkType };
+  if (activity?.type === "pump") return { leftMl: activity.leftMl, rightMl: activity.rightMl };
+  if (activity?.type === "diaper") return { diaperType: activity.diaperType, color: activity.color ?? "", consistency: activity.consistency ?? "" };
+  if (activity?.type === "sleep") {
+    const endedAt = new Date(activity.endedAt);
+    return { endDate: localDateInputValue(endedAt), endTime: localTimeInputValue(endedAt) };
+  }
+  if (activity?.type === "tummy") return { durationMinutes: activity.durationMinutes, label: activity.label };
+  if (activity?.type === "solid" || activity?.type === "custom") return { label: activity.label };
+  if (type === "bottle") return { amountMl: 90, milkType: "breast-milk" };
+  if (type === "pump") return { leftMl: 90, rightMl: 40 };
+  if (type === "diaper") return { diaperType: "poop", color: "Brown", consistency: "Soft" };
+  if (type === "tummy") return { durationMinutes: 0, label: "Nằm sấp" };
+  if (type === "solid") return { label: "Ăn dặm" };
+  if (type === "custom") return { label: "Hoạt động khác" };
+  if (type === "sleep") return { endDate: localDateInputValue(), endTime: localTimeInputValue() };
+  return { leftSeconds: 0, rightSeconds: 0 };
+}
+
+export function ActivityEditor({ type, babyId, activity }: { type: ActivityType; babyId: string; activity?: ActivityDto }) {
+  const router = useRouter();
+  const meta = getActivityMeta(type);
+  const storedTimer = useBreastfeedingTimer();
+  const editing = Boolean(activity);
+  const timer = !editing && type === "breastfeeding" && storedTimer?.babyId === babyId ? storedTimer : null;
+  const timerNow = useTimerNow(Boolean(timer?.activeSide));
+  const breastElapsed = getBreastfeedingElapsed(timer, timerNow);
+  const occurredDate = activity ? new Date(activity.occurredAt) : new Date();
+  const [date, setDate] = useState(() => localDateInputValue(occurredDate));
+  const [time, setTime] = useState(() => localTimeInputValue(occurredDate));
+  const [note, setNote] = useState(activity?.note ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [fields, setFields] = useState<Fields>(() => initialFields(type, activity));
+
+  const timerDate = timer ? new Date(timer.occurredAt) : null;
+  const displayedDate = timerDate ? localDateInputValue(timerDate) : date;
+  const displayedTime = timerDate ? localTimeInputValue(timerDate) : time;
+  const displayedNote = timer ? timer.note : note;
+  const totalBreast = editing ? Number(fields.leftSeconds) + Number(fields.rightSeconds) : breastElapsed.totalSeconds;
   const payload = useMemo<ActivityInput | null>(() => {
-    const base = { type, occurredAt: combineLocalDateTime(date, time), note } as const;
+    const base = { type, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: timer?.note ?? note } as const;
     switch (type) {
-      case "breastfeeding": return { ...base, type, leftSeconds: Number(fields.leftSeconds), rightSeconds: Number(fields.rightSeconds) };
-      case "bottle": return { ...base, type, milkType: String(fields.milkType) as "breast-milk"|"formula"|"other", amountOz: Number(fields.amountOz) };
-      case "pump": return { ...base, type, leftOz: Number(fields.leftOz), rightOz: Number(fields.rightOz) };
-      case "diaper": return { ...base, type, diaperType: String(fields.diaperType) as "pee"|"poop"|"mixed"|"dry", color: String(fields.color || ""), consistency: String(fields.consistency || "") };
+      case "breastfeeding": return { ...base, type, leftSeconds: editing ? Number(fields.leftSeconds) : breastElapsed.leftSeconds, rightSeconds: editing ? Number(fields.rightSeconds) : breastElapsed.rightSeconds };
+      case "bottle": return { ...base, type, milkType: String(fields.milkType) as "breast-milk" | "formula" | "other", amountMl: Number(fields.amountMl) };
+      case "pump": return { ...base, type, leftMl: Number(fields.leftMl), rightMl: Number(fields.rightMl) };
+      case "diaper": return { ...base, type, diaperType: String(fields.diaperType) as "pee" | "poop" | "mixed" | "dry", color: String(fields.color || ""), consistency: String(fields.consistency || "") };
       case "sleep": return { ...base, type, endedAt: combineLocalDateTime(String(fields.endDate), String(fields.endTime)) };
       case "tummy": return { ...base, type, durationMinutes: Number(fields.durationMinutes), label: String(fields.label) };
       case "solid": return { ...base, type, label: String(fields.label) };
       case "custom": return { ...base, type, label: String(fields.label) };
     }
-  }, [date, fields, note, time, type]);
-  const field = useCallback((name: string, value: string | number) => { setFields((prev) => ({ ...prev, [name]: value })); }, []);
+  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, note, time, timer?.note, timer?.occurredAt, type]);
+
+  const field = useCallback((name: string, value: string | number) => {
+    setFields((previous) => ({ ...previous, [name]: value }));
+    setSaved(false);
+  }, []);
+
   async function save() {
-    if (!payload) return; setBusy(true); setError("");
+    if (!payload) return;
+    setBusy(true);
+    setError("");
     try {
-      const res = await fetch("/api/activities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      if (!res.ok) { setError("Không thể lưu hoạt động. Kiểm tra dữ liệu và thử lại."); return; }
-      const json = await res.json() as { activity: ActivityDto };
+      const currentElapsed = getBreastfeedingElapsed(timer, Date.now());
+      const finalPayload = type === "breastfeeding" && timer
+        ? { ...payload, leftSeconds: currentElapsed.leftSeconds, rightSeconds: currentElapsed.rightSeconds }
+        : payload;
+      const response = await fetch(activity ? `/api/activities/${activity.id}` : "/api/activities", {
+        method: activity ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(finalPayload),
+      });
+      if (!response.ok) {
+        setError("Chưa thể lưu hoạt động. Bạn kiểm tra lại thông tin nhé.");
+        return;
+      }
+      const json = await response.json() as { activity: ActivityDto };
       const keys = cacheKeys(babyId);
       const cached = readCache<ActivityDto[]>(keys.activities) ?? [];
-      writeCache(keys.activities, [json.activity, ...cached].slice(0, 100));
-      router.replace("/app"); router.refresh();
-    } finally { setBusy(false); }
+      const nextCache = activity
+        ? cached.map((item) => item.id === json.activity.id ? json.activity : item).sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+        : [json.activity, ...cached].slice(0, 100);
+      writeCache(keys.activities, nextCache);
+      if (activity) {
+        setSaved(true);
+        if ("vibrate" in navigator) navigator.vibrate(10);
+      } else {
+        if (type === "breastfeeding") clearBreastfeedingTimer();
+        router.replace("/app");
+        router.refresh();
+      }
+    } catch {
+      setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
+    } finally {
+      setBusy(false);
+    }
   }
-  const DateTime = () => <div className="space-y-5 px-5 pt-5"><div className="flex items-center gap-4"><CalendarIcon className="h-8 w-8 shrink-0"/><b className="text-2xl">Date</b><input aria-label="Date" value={date} onChange={(e)=>setDate(e.target.value)} type="date" className="ml-auto min-w-0 max-w-[190px] rounded-2xl bg-zinc-100 px-3 py-2 text-lg font-bold"/></div><div className="flex items-center gap-4"><ClockIcon className="h-8 w-8 shrink-0"/><b className="text-2xl">Time</b><input aria-label="Time" value={time} onChange={(e)=>setTime(e.target.value)} type="time" className="ml-auto min-w-0 max-w-[135px] rounded-2xl bg-zinc-100 px-3 py-2 text-lg font-bold"/></div></div>;
-  return <div className="min-h-dvh bg-[#fafafa] pb-8"><header className="flex items-center bg-[#9b55ee] px-3 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-white"><button onClick={()=>router.back()} className="p-2" aria-label="Back"><ChevronLeft className="h-8 w-8"/></button><h1 className="flex-1 pr-10 text-center text-xl font-extrabold">{type === "diaper" ? "Track Baby's Diapers" : type === "breastfeeding" || type === "bottle" || type === "pump" ? "Track Baby's Feedings" : "Track Baby's Routine"}</h1></header>
-    {(type === "breastfeeding" || type === "bottle" || type === "pump") ? <div className="grid grid-cols-3 border-b bg-white text-center text-lg"><button onClick={()=>router.replace('/app/track/breastfeeding')} className={`py-3 ${type==='breastfeeding'?'border-b-4 border-[#20b4b4] font-bold text-[#20b4b4]':''}`}>Breastfeeding</button><button onClick={()=>router.replace('/app/track/bottle')} className={`py-3 ${type==='bottle'?'border-b-4 border-[#20b4b4] font-bold text-[#20b4b4]':''}`}>Bottle</button><button onClick={()=>router.replace('/app/track/pump')} className={`py-3 ${type==='pump'?'border-b-4 border-[#20b4b4] font-bold text-[#20b4b4]':''}`}>Pump</button></div> : null}
-    <DateTime />
-    <div className="px-5 pt-8">
-      {type === "breastfeeding" ? <BreastFields left={Number(fields.leftSeconds)} right={Number(fields.rightSeconds)} setField={field} total={totalBreast}/> : null}
-      {type === "bottle" ? <BottleFields fields={fields} setField={field}/> : null}
-      {type === "pump" ? <PumpFields fields={fields} setField={field}/> : null}
-      {type === "diaper" ? <DiaperFields fields={fields} setField={field}/> : null}
-      {type === "sleep" ? <SleepFields fields={fields} setField={field}/> : null}
-      {type === "tummy" ? <TummyFields fields={fields} setField={field}/> : null}
-      {type === "solid" || type === "custom" ? <LabelField fields={fields} setField={field} placeholder={meta.label}/> : null}
-      <label className="mt-8 block"><span className="mb-3 block text-xl font-extrabold">Notes</span><textarea value={note} onChange={(e)=>setNote(e.target.value)} className="h-28 w-full resize-none rounded-2xl border border-zinc-300 bg-white p-4 text-lg outline-none focus:border-[#20b4b4]" placeholder="Add a Note"/></label>
-      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
-      <button onClick={save} disabled={busy || (type==='breastfeeding' && totalBreast===0)} className="mt-7 w-full rounded-full bg-[#20b4b4] py-4 text-xl font-extrabold text-white disabled:bg-zinc-200 disabled:text-zinc-500">{busy ? "Saving…" : "Save"}</button>
+
+  function changeDate(nextDate: string) {
+    setDate(nextDate);
+    setSaved(false);
+    if (timer) updateBreastfeedingDraft({ occurredAt: combineLocalDateTime(nextDate, displayedTime) });
+  }
+
+  function changeTime(nextTime: string) {
+    setTime(nextTime);
+    setSaved(false);
+    if (timer) updateBreastfeedingDraft({ occurredAt: combineLocalDateTime(displayedDate, nextTime) });
+  }
+
+  function changeNote(nextNote: string) {
+    setNote(nextNote);
+    setSaved(false);
+    if (timer) updateBreastfeedingDraft({ note: nextNote });
+  }
+
+  return <div className="app-page pb-4">
+    <header className="rounded-b-[2rem] bg-[var(--color-primary)] px-3 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+      <div className="flex items-center">
+        <button onClick={() => router.back()} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition-colors hover:bg-white/15 active:bg-white/20" aria-label="Quay lại">
+          <ChevronLeft className="h-7 w-7" />
+        </button>
+        <div className="min-w-0 flex-1 text-center">
+          <p className="text-xs font-bold text-white/70">{editing ? "Chi tiết hoạt động" : screenTitle(type)}</p>
+          <h1 className="truncate text-xl font-extrabold tracking-tight">{meta.label}</h1>
+        </div>
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15" aria-hidden="true">
+          <ActivityAsset type={type} size={42} className="h-10 w-10" />
+        </div>
+      </div>
+    </header>
+
+    {!editing && (type === "breastfeeding" || type === "bottle" || type === "pump") ? <nav aria-label="Loại cữ ăn" className="mx-4 mt-4 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--color-border)] bg-white p-1 sm:mx-6">
+      {([
+        ["breastfeeding", "Bú mẹ"], ["bottle", "Bú bình"], ["pump", "Hút sữa"],
+      ] as const).map(([tabType, label]) => <button key={tabType} onClick={() => router.replace(`/app/track/${tabType}`)} aria-current={type === tabType ? "page" : undefined} className={`min-h-11 rounded-xl px-2 text-sm font-extrabold transition-colors ${type === tabType ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "text-[var(--color-muted)] hover:bg-zinc-50"}`}>{label}</button>)}
+    </nav> : null}
+
+    <main className="space-y-4 px-4 py-5 sm:px-6">
+      {editing ? <p className="rounded-2xl bg-[var(--color-primary-soft)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--color-primary-strong)]">Chạm vào từng trường bên dưới để sửa. Loại hoạt động được giữ nguyên để dữ liệu thống kê luôn chính xác.</p> : null}
+      <section className="surface-card p-4" aria-labelledby="time-title">
+        <h2 id="time-title" className="mb-3 text-sm font-extrabold text-[var(--color-muted)]">Thời điểm</h2>
+        <div className="space-y-3">
+          <DateTimeRow icon={<CalendarIcon className="h-5 w-5" />} label="Ngày">
+            <input aria-label="Ngày diễn ra" value={displayedDate} onChange={(event) => changeDate(event.target.value)} type="date" className="min-h-11 min-w-0 max-w-[180px] rounded-xl bg-[#f4f1f7] px-3 py-2 text-right text-sm font-bold outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+          </DateTimeRow>
+          <DateTimeRow icon={<ClockIcon className="h-5 w-5" />} label="Giờ">
+            <input aria-label="Giờ diễn ra" value={displayedTime} onChange={(event) => changeTime(event.target.value)} type="time" className="min-h-11 min-w-0 max-w-[140px] rounded-xl bg-[#f4f1f7] px-3 py-2 text-right text-sm font-bold outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+          </DateTimeRow>
+        </div>
+      </section>
+
+      <section className="surface-card p-5">
+        {type === "breastfeeding" ? editing
+          ? <BreastEditFields fields={fields} setField={field} />
+          : <BreastFields timer={timer} now={timerNow} draft={{ babyId, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: displayedNote }} />
+        : null}
+        {type === "bottle" ? <BottleFields fields={fields} setField={field} /> : null}
+        {type === "pump" ? <PumpFields fields={fields} setField={field} /> : null}
+        {type === "diaper" ? <DiaperFields fields={fields} setField={field} /> : null}
+        {type === "sleep" ? <SleepFields fields={fields} setField={field} /> : null}
+        {type === "tummy" ? <TummyFields fields={fields} setField={field} /> : null}
+        {type === "solid" || type === "custom" ? <LabelField fields={fields} setField={field} placeholder={meta.label} /> : null}
+      </section>
+
+      <label className="surface-card block p-5">
+        <span className="mb-2 block text-sm font-extrabold">Ghi chú <span className="font-medium text-[var(--color-muted)]">(không bắt buộc)</span></span>
+        <textarea value={displayedNote} onChange={(event) => changeNote(event.target.value)} className="field-control h-24 resize-none" placeholder="Ví dụ: Bé ăn ngon, ngủ sâu…" />
+      </label>
+
+      {error ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error}</p> : null}
+      {saved ? <p role="status" className="rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-center text-sm font-extrabold text-[var(--color-accent)]">Đã lưu thay đổi</p> : null}
+    </main>
+
+    <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto w-full min-w-[300px] max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-4 pt-3 backdrop-blur-xl sm:px-6">
+      <button onClick={save} disabled={busy || (editing && saved) || (type === "breastfeeding" && totalBreast === 0)} className="primary-button w-full">
+        {busy ? "Đang lưu…" : editing ? saved ? "Đã lưu" : "Lưu thay đổi" : "Lưu hoạt động"}
+      </button>
     </div>
   </div>;
 }
 
-function BreastFields({left,right,total,setField}:{left:number;right:number;total:number;setField:(n:string,v:number)=>void}) {
-  const [running, setRunning] = useState<"left"|"right"|null>(null);
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => {
-      if (running === "left") setField("leftSeconds", left + 1);
-      else setField("rightSeconds", right + 1);
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [left, right, running, setField]);
-  return <div><div className="text-center"><div className="text-5xl font-black">{fmt(total)}</div><div className="text-lg">min&nbsp;&nbsp;&nbsp;sec</div></div><div className="mt-8 grid grid-cols-2 gap-6"><TimerButton label="L" seconds={left} active={running==='left'} onClick={()=>setRunning((r)=>r==='left'?null:'left')}/><TimerButton label="R" seconds={right} active={running==='right'} onClick={()=>setRunning((r)=>r==='right'?null:'right')}/></div></div>;
+function DateTimeRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return <div className="flex min-h-12 items-center gap-3">
+    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]">{icon}</span>
+    <b className="text-sm">{label}</b>
+    <div className="ml-auto min-w-0">{children}</div>
+  </div>;
 }
-function TimerButton({label,seconds,active,onClick}:{label:string;seconds:number;active:boolean;onClick:()=>void}) { return <div className="text-center"><div className="mb-2 text-2xl">{fmt(seconds)}</div><button onClick={onClick} className="mx-auto grid h-32 w-32 max-w-full place-items-center rounded-full border-8 border-zinc-200 bg-[#fff0e8] text-5xl font-black text-[#9b55ee]">{active?'Ⅱ':'▶'}</button><div className="mt-4 text-3xl font-black">{label}</div></div>; }
-function fmt(s:number){ const m=Math.floor(s/60); return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
-function BottleFields({fields,setField}:{fields:Fields;setField:(n:string,v:string|number)=>void}) { return <div><div className="flex items-center justify-between"><select value={String(fields.milkType)} onChange={(e)=>setField('milkType',e.target.value)} className="bg-transparent text-xl font-extrabold text-[#20b4b4]"><option value="breast-milk">Breast milk</option><option value="formula">Formula</option><option value="other">Other</option></select><div><span className="text-5xl font-black text-[#20b4b4]">{Number(fields.amountOz).toFixed(1)}</span> oz</div></div><input type="range" min="0" max="10" step="0.1" value={Number(fields.amountOz)} onChange={(e)=>setField('amountOz',Number(e.target.value))} className="mt-12 w-full accent-[#20b4b4]"/><div className="mt-3 flex justify-between font-bold"><span>0 oz</span><span>5 oz</span><span>10 oz</span></div></div>; }
-function PumpFields({fields,setField}:{fields:Fields;setField:(n:string,v:number)=>void}) { const total=Number(fields.leftOz)+Number(fields.rightOz); return <div><div className="text-center text-4xl font-black">{total.toFixed(1)} <small className="text-xl font-normal">oz</small></div><div className="mt-8 grid grid-cols-2 gap-6"><AmountSlider label="L" value={Number(fields.leftOz)} onChange={(v)=>setField('leftOz',v)}/><AmountSlider label="R" value={Number(fields.rightOz)} onChange={(v)=>setField('rightOz',v)}/></div></div>; }
-function AmountSlider({label,value,onChange}:{label:string;value:number;onChange:(v:number)=>void}) { return <div className="text-center"><div className="text-4xl font-black text-[#20b4b4]">{value.toFixed(1)}</div><input className="mt-8 w-full accent-[#20b4b4]" type="range" min="0" max="8" step="0.1" value={value} onChange={(e)=>onChange(Number(e.target.value))}/><div className="mt-4 text-3xl font-black">{label}</div></div>; }
-function DiaperFields({fields,setField}:{fields:Fields;setField:(n:string,v:string)=>void}) { const t=String(fields.diaperType); return <div><div className="grid grid-cols-4 gap-2">{['pee','poop','mixed','dry'].map((x)=><button key={x} onClick={()=>setField('diaperType',x)} className={`rounded-full border-4 p-3 text-sm font-bold capitalize ${t===x?'border-[#20b4b4] bg-[#fff4e8]':'border-transparent bg-zinc-100'}`}>{x}</button>)}</div>{t==='poop'||t==='mixed'?<><OptionRow title="Color" options={colors} selected={String(fields.color)} onPick={(v)=>setField('color',v)}/><OptionRow title="Consistency" options={consistencies} selected={String(fields.consistency)} onPick={(v)=>setField('consistency',v)}/></>:null}</div>; }
-function OptionRow({title,options,selected,onPick}:{title:string;options:string[];selected:string;onPick:(v:string)=>void}) { return <div className="mt-7"><h3 className="mb-3 text-xl font-extrabold">{title}</h3><div className="no-scrollbar flex gap-2 overflow-x-auto">{options.map((o)=><button key={o} onClick={()=>onPick(o)} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${selected===o?'bg-[#20b4b4] text-white':'bg-zinc-100'}`}>{o}</button>)}</div></div>; }
-function SleepFields({fields,setField}:{fields:Fields;setField:(n:string,v:string)=>void}) { return <div><h3 className="mb-4 text-xl font-extrabold">Woke Up</h3><div className="grid grid-cols-2 gap-3"><input type="date" value={String(fields.endDate)} onChange={(e)=>setField('endDate',e.target.value)} className="rounded-2xl bg-zinc-100 p-3 font-bold"/><input type="time" value={String(fields.endTime)} onChange={(e)=>setField('endTime',e.target.value)} className="rounded-2xl bg-zinc-100 p-3 font-bold"/></div><p className="mt-4 text-zinc-500">Enter the beginning and end of your baby's sleep.</p><LabelField fields={{label:'Sleep'}} setField={()=>{}} placeholder="Sleep" disabled/></div>; }
-function TummyFields({fields,setField}:{fields:Fields;setField:(n:string,v:string|number)=>void}) { return <div><label className="flex items-center gap-4"><b className="text-xl">Total Time</b><input type="number" min="0" max="600" value={Number(fields.durationMinutes)} onChange={(e)=>setField('durationMinutes',Number(e.target.value))} className="ml-auto w-36 rounded-2xl bg-zinc-100 p-3 text-right text-xl font-bold"/><span>min</span></label><LabelField fields={fields} setField={setField} placeholder="Tummy Time"/></div>; }
-function LabelField({fields,setField,placeholder,disabled=false}:{fields:Fields;setField:(n:string,v:string)=>void;placeholder:string;disabled?:boolean}) { return <label className="mt-7 block"><span className="mb-3 block text-xl font-extrabold">Display in Timeline as</span><input disabled={disabled} value={String(fields.label ?? placeholder)} onChange={(e)=>setField('label',e.target.value)} className="w-full rounded-2xl border border-zinc-300 bg-white p-4 text-lg font-bold disabled:text-zinc-400" placeholder={placeholder}/></label>; }
+
+function BreastFields({ timer, now, draft }: { timer: BreastfeedingTimerState | null; now: number; draft: { babyId: string; occurredAt: string; note: string } }) {
+  const elapsed = getBreastfeedingElapsed(timer, now);
+  return <div>
+    <p className="text-center text-sm font-bold text-[var(--color-muted)]">Tổng thời gian</p>
+    <div className="mt-1 text-center text-4xl font-black tracking-tight tabular-nums">{formatTimerDuration(elapsed.totalSeconds)}</div>
+    <div className="mt-6 grid grid-cols-2 gap-4">
+      <TimerButton label="Bên trái" seconds={elapsed.leftSeconds} active={timer?.activeSide === "left"} onClick={() => toggleBreastSide("left", draft)} />
+      <TimerButton label="Bên phải" seconds={elapsed.rightSeconds} active={timer?.activeSide === "right"} onClick={() => toggleBreastSide("right", draft)} />
+    </div>
+    {!timer ? <p className="mt-5 text-center text-xs text-[var(--color-muted)]">Bấm bắt đầu một bên để tính giờ. Thanh theo dõi sẽ luôn hiển thị phía dưới.</p> : <p className="mt-5 text-center text-xs text-[var(--color-muted)]">Bạn có thể chuyển màn hình hoặc đưa app xuống nền mà không mất thời gian đã ghi.</p>}
+  </div>;
+}
+
+function BreastEditFields({ fields, setField }: { fields: Fields; setField: (name: string, value: number) => void }) {
+  const leftSeconds = Number(fields.leftSeconds);
+  const rightSeconds = Number(fields.rightSeconds);
+  return <div>
+    <p className="text-center text-sm font-bold text-[var(--color-muted)]">Tổng thời gian bú</p>
+    <div className="mt-1 text-center text-4xl font-black tracking-tight tabular-nums">{formatTimerDuration(leftSeconds + rightSeconds)}</div>
+    <p className="mt-2 text-center text-xs leading-5 text-[var(--color-muted)]">Chạm vào phút hoặc giây để sửa chính xác thời lượng mỗi bên.</p>
+    <div className="mt-6 grid grid-cols-2 gap-3">
+      <DurationControl label="Bên trái" seconds={leftSeconds} onChange={(value) => setField("leftSeconds", value)} />
+      <DurationControl label="Bên phải" seconds={rightSeconds} onChange={(value) => setField("rightSeconds", value)} />
+    </div>
+  </div>;
+}
+
+function DurationControl({ label, seconds, onChange }: { label: string; seconds: number; onChange: (value: number) => void }) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return <fieldset className="rounded-2xl bg-[#f7f4fa] p-3">
+    <legend className="px-1 text-sm font-extrabold">{label}</legend>
+    <div className="mt-1 grid grid-cols-2 gap-2">
+      <label className="min-w-0 text-center text-xs font-bold text-[var(--color-muted)]">Phút
+        <input aria-label={`Số phút ${label.toLowerCase()}`} type="number" inputMode="numeric" min="0" max="600" value={minutes} onChange={(event) => onChange(Math.max(0, Number(event.target.value)) * 60 + remainingSeconds)} className="field-control mt-1 min-w-0 px-2 text-center text-lg font-black tabular-nums" />
+      </label>
+      <label className="min-w-0 text-center text-xs font-bold text-[var(--color-muted)]">Giây
+        <input aria-label={`Số giây ${label.toLowerCase()}`} type="number" inputMode="numeric" min="0" max="59" value={remainingSeconds} onChange={(event) => onChange(minutes * 60 + Math.min(59, Math.max(0, Number(event.target.value))))} className="field-control mt-1 min-w-0 px-2 text-center text-lg font-black tabular-nums" />
+      </label>
+    </div>
+  </fieldset>;
+}
+
+function TimerButton({ label, seconds, active, onClick }: { label: string; seconds: number; active: boolean; onClick: () => void }) {
+  return <div className="rounded-2xl bg-[#f7f4fa] p-3 text-center">
+    <div className="mb-3 text-lg font-black tabular-nums">{formatTimerDuration(seconds)}</div>
+    <button onClick={onClick} aria-label={`${active ? "Tạm dừng" : "Bắt đầu"} ${label.toLowerCase()}`} className={`mx-auto grid h-20 w-20 place-items-center rounded-full border-[6px] transition duration-200 active:scale-[.97] ${active ? "border-[#cfc2ef] bg-[var(--color-primary)] text-white" : "border-[#e0d8eb] bg-white text-[var(--color-primary-strong)]"}`}>
+      {active ? <PauseIcon className="h-7 w-7" /> : <PlayIcon className="ml-0.5 h-7 w-7" />}
+    </button>
+    <div className="mt-3 text-sm font-extrabold">{label}</div>
+  </div>;
+}
+
+function BottleFields({ fields, setField }: { fields: Fields; setField: (name: string, value: string | number) => void }) {
+  return <div>
+    <label className="block text-sm font-extrabold" htmlFor="milk-type">Loại sữa</label>
+    <select id="milk-type" value={String(fields.milkType)} onChange={(event) => setField("milkType", event.target.value)} className="field-control mt-2">
+      <option value="breast-milk">Sữa mẹ</option><option value="formula">Sữa công thức</option><option value="other">Loại khác</option>
+    </select>
+    <label className="mx-auto mt-6 block max-w-44 text-center text-sm font-extrabold" htmlFor="bottle-amount-number">Lượng sữa (ml)
+      <input id="bottle-amount-number" type="number" inputMode="numeric" min="0" max="600" value={Number(fields.amountMl)} onChange={(event) => setField("amountMl", Number(event.target.value))} className="field-control mt-2 text-center text-2xl font-black text-[var(--color-accent)]" />
+    </label>
+    <label className="sr-only" htmlFor="bottle-amount">Điều chỉnh lượng sữa</label>
+    <input id="bottle-amount" type="range" min="0" max="600" step="5" value={Number(fields.amountMl)} onChange={(event) => setField("amountMl", Number(event.target.value))} className="mt-4 h-12 w-full accent-[var(--color-accent)]" />
+    <div className="flex justify-between text-xs font-bold text-[var(--color-muted)]"><span>0 ml</span><span>300 ml</span><span>600 ml</span></div>
+  </div>;
+}
+
+function PumpFields({ fields, setField }: { fields: Fields; setField: (name: string, value: number) => void }) {
+  const total = Number(fields.leftMl) + Number(fields.rightMl);
+  return <div>
+    <p className="text-center text-sm font-bold text-[var(--color-muted)]">Tổng lượng sữa</p>
+    <div className="mt-1 text-center text-4xl font-black">{total} <small className="text-base font-bold text-[var(--color-muted)]">ml</small></div>
+    <div className="mt-6 grid grid-cols-2 gap-4">
+      <AmountSlider label="Bên trái" value={Number(fields.leftMl)} onChange={(value) => setField("leftMl", value)} />
+      <AmountSlider label="Bên phải" value={Number(fields.rightMl)} onChange={(value) => setField("rightMl", value)} />
+    </div>
+  </div>;
+}
+
+function AmountSlider({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return <fieldset className="rounded-2xl bg-[#f7f4fa] p-3 text-center">
+    <legend className="px-1 text-sm font-extrabold">{label}</legend>
+    <input aria-label={`Lượng sữa ${label.toLowerCase()} theo ml`} type="number" inputMode="numeric" min="0" max="600" value={value} onChange={(event) => onChange(Number(event.target.value))} className="field-control mt-1 px-2 text-center text-xl font-black text-[var(--color-accent)]" />
+    <input aria-label={`Điều chỉnh lượng sữa ${label.toLowerCase()}`} className="mt-3 h-11 w-full accent-[var(--color-accent)]" type="range" min="0" max="600" step="5" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+  </fieldset>;
+}
+
+function DiaperFields({ fields, setField }: { fields: Fields; setField: (name: string, value: string) => void }) {
+  const type = String(fields.diaperType);
+  return <div>
+    <h2 className="text-sm font-extrabold">Tình trạng tã</h2>
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {diaperTypes.map((option) => <button key={option.value} onClick={() => setField("diaperType", option.value)} className={`min-h-12 rounded-xl border px-3 text-sm font-extrabold transition-colors ${type === option.value ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:bg-zinc-50"}`}>{option.label}</button>)}
+    </div>
+    {type === "poop" || type === "mixed" ? <>
+      <OptionRow title="Màu sắc" options={colors} selected={String(fields.color)} onPick={(value) => setField("color", value)} />
+      <OptionRow title="Kết cấu" options={consistencies} selected={String(fields.consistency)} onPick={(value) => setField("consistency", value)} />
+    </> : null}
+  </div>;
+}
+
+function OptionRow({ title, options, selected, onPick }: { title: string; options: PickOption[]; selected: string; onPick: (value: string) => void }) {
+  return <fieldset className="mt-6">
+    <legend className="mb-3 text-sm font-extrabold">{title}</legend>
+    <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+      {options.map((option) => <button key={option.value} onClick={() => onPick(option.value)} className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold transition-colors ${selected === option.value ? "bg-[var(--color-accent)] text-white" : "bg-[#f2eff5] text-[var(--color-muted)] hover:bg-[#e9e4ed]"}`}>{option.label}</button>)}
+    </div>
+  </fieldset>;
+}
+
+function SleepFields({ fields, setField }: { fields: Fields; setField: (name: string, value: string) => void }) {
+  return <div>
+    <h2 className="text-sm font-extrabold">Thời điểm bé thức dậy</h2>
+    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <label><span className="mb-1.5 block text-xs font-bold text-[var(--color-muted)]">Ngày</span><input aria-label="Ngày thức dậy" type="date" value={String(fields.endDate)} onChange={(event) => setField("endDate", event.target.value)} className="field-control" /></label>
+      <label><span className="mb-1.5 block text-xs font-bold text-[var(--color-muted)]">Giờ</span><input aria-label="Giờ thức dậy" type="time" value={String(fields.endTime)} onChange={(event) => setField("endTime", event.target.value)} className="field-control" /></label>
+    </div>
+    <p className="mt-3 text-xs leading-5 text-[var(--color-muted)]">Thời điểm bắt đầu giấc ngủ được lấy ở phần “Thời điểm” phía trên.</p>
+  </div>;
+}
+
+function TummyFields({ fields, setField }: { fields: Fields; setField: (name: string, value: string | number) => void }) {
+  return <div>
+    <label className="block"><span className="mb-2 block text-sm font-extrabold">Tổng thời gian (phút)</span><input type="number" inputMode="numeric" min="0" max="600" value={Number(fields.durationMinutes)} onChange={(event) => setField("durationMinutes", Number(event.target.value))} className="field-control text-lg font-bold" /></label>
+    <LabelField fields={fields} setField={setField} placeholder="Nằm sấp" />
+  </div>;
+}
+
+function LabelField({ fields, setField, placeholder }: { fields: Fields; setField: (name: string, value: string) => void; placeholder: string }) {
+  return <label className="mt-6 block first:mt-0">
+    <span className="mb-2 block text-sm font-extrabold">Tên hiển thị trên nhật ký</span>
+    <input value={String(fields.label ?? placeholder)} onChange={(event) => setField("label", event.target.value)} className="field-control font-bold" placeholder={placeholder} />
+  </label>;
+}

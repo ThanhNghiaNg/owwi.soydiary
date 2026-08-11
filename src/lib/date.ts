@@ -14,24 +14,26 @@ export function formatClock(iso: string) {
 export function relativeFromNow(iso: string) {
   const diff = Math.max(0, Date.now() - new Date(iso).getTime());
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return "Vừa xong";
+  if (mins < 60) return `${mins} phút trước`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hrs ago`;
+  if (hrs < 24) return `${hrs} giờ trước`;
   const days = Math.floor(hrs / 24);
-  return `${days} day${days > 1 ? "s" : ""}, ${hrs % 24} hrs ago`;
+  if (hrs % 24 === 0) return `${days} ngày trước`;
+  return `${days} ngày ${hrs % 24} giờ trước`;
 }
 export function babyAgeText(birthDate: string) {
   const birth = new Date(`${birthDate}T00:00:00`);
   const days = Math.max(0, Math.floor((Date.now() - birth.getTime()) / 86_400_000));
-  if (days < 7) return `${days}-Day-Old Baby`;
+  if (days < 7) return `${days} ngày tuổi`;
   const weeks = Math.floor(days / 7);
-  return `${weeks}-Week-Old Baby`;
+  return `${weeks} tuần tuổi`;
 }
 export function babyAgeSentence(name: string, birthDate: string) {
   const birth = new Date(`${birthDate}T00:00:00`);
   const days = Math.max(0, Math.floor((Date.now() - birth.getTime()) / 86_400_000));
   const weeks = Math.floor(days / 7);
   const rem = days % 7;
-  return `Today ${name} is ${weeks} Week${weeks === 1 ? "" : "s"}, ${rem} Day${rem === 1 ? "" : "s"} old.`;
+  if (weeks === 0) return `Hôm nay ${name} tròn ${rem} ngày tuổi.`;
+  return `Hôm nay ${name} được ${weeks} tuần${rem ? ` và ${rem} ngày` : ""}.`;
 }

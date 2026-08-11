@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
   if (!baby?._id) return NextResponse.json({ activities: [] });
   const rawType = request.nextUrl.searchParams.get("type");
   const type = rawType && allowedTypes.has(rawType as ActivityType) ? rawType as ActivityType : undefined;
-  const docs = await listActivities(session.user.id, baby._id.toHexString(), 100, type);
+  const rawLimit = Number(request.nextUrl.searchParams.get("limit") ?? 100);
+  const limit = Number.isFinite(rawLimit) ? Math.min(1000, Math.max(1, Math.trunc(rawLimit))) : 100;
+  const rawFrom = request.nextUrl.searchParams.get("from");
+  const rawTo = request.nextUrl.searchParams.get("to");
+  const from = rawFrom && !Number.isNaN(Date.parse(rawFrom)) ? new Date(rawFrom).toISOString() : undefined;
+  const to = rawTo && !Number.isNaN(Date.parse(rawTo)) ? new Date(rawTo).toISOString() : undefined;
+  if (from && to && from > to) return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+  const docs = await listActivities(session.user.id, baby._id.toHexString(), limit, type, from, to);
   return NextResponse.json({ activities: docs.map(toActivityDto), syncedAt: new Date().toISOString() });
 }
 

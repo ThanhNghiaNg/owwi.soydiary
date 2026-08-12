@@ -20,13 +20,12 @@ import {
 import { type ActivitiesResponse } from "@/lib/swr";
 
 type HistoryTab = "timeline" | "summary";
-const historyOrder: ActivityType[] = ["breastfeeding", "diaper", "pump", "bottle", "sleep", "tummy", "solid", "custom"];
-const activityFilters = historyOrder.map((type) => ACTIVITY_REGISTRY.find((item) => item.type === type)!);
+const quickActivityOrder: ActivityType[] = ["breastfeeding", "diaper", "pump", "bottle", "sleep", "tummy", "solid", "custom"];
+const quickActivities = quickActivityOrder.map((type) => ACTIVITY_REGISTRY.find((item) => item.type === type)!);
 const emptyActivities: ActivityDto[] = [];
 
 export function HistoryScreen() {
   const [tab, setTab] = useState<HistoryTab>("timeline");
-  const [selectedType, setSelectedType] = useState<ActivityType | null>(null);
   const [range, setRange] = useState<HistoryRange>(() => makeHistoryRange("today"));
   const [rangeOpen, setRangeOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(50);
@@ -38,12 +37,8 @@ export function HistoryScreen() {
   const { data: response, error, isLoading, mutate } = useSWR<ActivitiesResponse>(activitiesKey);
   const activities = response?.activities ?? emptyActivities;
 
-  const visibleActivities = useMemo(
-    () => selectedType ? activities.filter((item) => item.type === selectedType) : activities,
-    [activities, selectedType],
-  );
-  const timelineGroups = useMemo(() => groupActivitiesByDay(visibleActivities.slice(0, visibleCount)), [visibleActivities, visibleCount]);
-  const summary = useMemo(() => buildHistorySummary(visibleActivities, range), [range, visibleActivities]);
+  const timelineGroups = useMemo(() => groupActivitiesByDay(activities.slice(0, visibleCount)), [activities, visibleCount]);
+  const summary = useMemo(() => buildHistorySummary(activities, range), [activities, range]);
   const closeRange = useCallback(() => setRangeOpen(false), []);
   const applyRange = useCallback((next: HistoryRange) => {
     setVisibleCount(50);
@@ -68,30 +63,23 @@ export function HistoryScreen() {
     </header>
 
     <main className="px-4 py-5 sm:px-6">
-      <section aria-labelledby="history-filter-title">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 id="history-filter-title" className="text-lg font-extrabold tracking-tight">Lọc hoạt động</h2>
-            <p className="mt-0.5 text-xs text-[var(--color-muted)]">Chọn một loại để xem riêng</p>
-          </div>
-          {selectedType ? <button onClick={() => setSelectedType(null)} className="min-h-11 rounded-xl px-3 text-sm font-extrabold text-[var(--color-primary-strong)] hover:bg-[var(--color-primary-soft)]">Xem tất cả</button> : null}
+      <section aria-labelledby="history-quick-track-title">
+        <div>
+          <h2 id="history-quick-track-title" className="text-lg font-extrabold tracking-tight">Ghi nhanh</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-muted)]">Chạm để ghi một hoạt động mới</p>
         </div>
         <div className="no-scrollbar -mx-4 mt-3 flex snap-x gap-2 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
-          {activityFilters.map((item) => {
-            const active = selectedType === item.type;
-            return <button
+          {quickActivities.map((item) => <Link
               key={item.type}
-              type="button"
-              aria-pressed={active}
-              onClick={() => setSelectedType((current) => current === item.type ? null : item.type)}
-              className={`min-w-[76px] snap-start rounded-2xl border px-2 py-2.5 text-center transition duration-200 ${active ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-[0_5px_16px_rgba(58,43,76,0.08)]" : "border-[var(--color-border)] bg-white hover:border-[#cfc3dc]"}`}
+              href={`/app/track/${item.type}?from=history`}
+              aria-label={`Ghi hoạt động ${item.label}`}
+              className="group min-w-[76px] touch-manipulation snap-start rounded-2xl border border-[var(--color-border)] bg-white px-2 py-2.5 text-center shadow-[0_3px_12px_rgba(58,43,76,0.04)] transition duration-200 hover:border-[var(--color-primary)] hover:shadow-[0_5px_16px_rgba(58,43,76,0.08)] active:bg-[var(--color-primary-soft)]"
             >
               <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl" style={{ backgroundColor: `${item.accent}18` }}>
                 <ActivityAsset type={item.type} size={38} className="h-9 w-9" />
               </span>
-              <span className={`mt-1.5 block truncate text-xs font-extrabold ${active ? "text-[var(--color-primary-strong)]" : "text-[var(--color-ink)]"}`}>{item.shortLabel}</span>
-            </button>;
-          })}
+              <span className="mt-1.5 block truncate text-xs font-extrabold text-[var(--color-ink)] group-hover:text-[var(--color-primary-strong)]">{item.shortLabel}</span>
+            </Link>)}
         </div>
       </section>
 
@@ -113,8 +101,8 @@ export function HistoryScreen() {
 
       <div id="history-panel" role="tabpanel" aria-labelledby={tab === "timeline" ? "history-tab-timeline" : "history-tab-summary"}>
       {!isLoading || activities.length > 0 ? tab === "timeline"
-        ? <Timeline groups={timelineGroups} filtered={Boolean(selectedType)} hasMore={visibleActivities.length > visibleCount} onLoadMore={() => setVisibleCount((count) => count + 50)} />
-        : <Summary sections={summary} filtered={Boolean(selectedType)} />
+        ? <Timeline groups={timelineGroups} hasMore={activities.length > visibleCount} onLoadMore={() => setVisibleCount((count) => count + 50)} />
+        : <Summary sections={summary} />
       : null}
       </div>
     </main>
@@ -123,8 +111,8 @@ export function HistoryScreen() {
   </div>;
 }
 
-function Timeline({ groups, filtered, hasMore, onLoadMore }: { groups: ReturnType<typeof groupActivitiesByDay>; filtered: boolean; hasMore: boolean; onLoadMore: () => void }) {
-  if (!groups.length) return <EmptyState title={filtered ? "Chưa có hoạt động loại này" : "Chưa có hoạt động"} description="Thử chọn khoảng ngày khác hoặc ghi một hoạt động mới cho bé." />;
+function Timeline({ groups, hasMore, onLoadMore }: { groups: ReturnType<typeof groupActivitiesByDay>; hasMore: boolean; onLoadMore: () => void }) {
+  if (!groups.length) return <EmptyState title="Chưa có hoạt động" description="Thử chọn khoảng ngày khác hoặc ghi một hoạt động mới cho bé." />;
   return <div className="mt-5 space-y-6">
     {groups.map((group) => <section key={group.key} aria-labelledby={`day-${group.key}`}>
       <h2 id={`day-${group.key}`} className="mb-3 text-sm font-extrabold capitalize text-[var(--color-muted)]">{group.label}</h2>
@@ -164,8 +152,8 @@ function activityBreakdown(activity: ActivityDto) {
   return "";
 }
 
-function Summary({ sections, filtered }: { sections: ReturnType<typeof buildHistorySummary>; filtered: boolean }) {
-  if (!sections.length) return <EmptyState title={filtered ? "Chưa đủ dữ liệu để tổng hợp" : "Chưa có dữ liệu tổng hợp"} description="Thử chọn khoảng ngày khác hoặc ghi thêm hoạt động cho bé." />;
+function Summary({ sections }: { sections: ReturnType<typeof buildHistorySummary> }) {
+  if (!sections.length) return <EmptyState title="Chưa có dữ liệu tổng hợp" description="Thử chọn khoảng ngày khác hoặc ghi thêm hoạt động cho bé." />;
   return <div className="mt-5 space-y-4">
     {sections.map((section) => <details key={section.key} open className="group surface-card overflow-hidden">
       <summary className="flex min-h-16 list-none items-center gap-3 px-5 py-3 marker:hidden [&::-webkit-details-marker]:hidden">

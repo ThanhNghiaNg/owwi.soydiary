@@ -140,7 +140,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         if ("vibrate" in navigator) navigator.vibrate(10);
       } else {
         if (type === "breastfeeding") clearBreastfeedingTimer();
-        router.replace("/app");
+        router.replace(returnHref);
       }
     } catch {
       setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
@@ -208,7 +208,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     {!editing && (type === "breastfeeding" || type === "bottle" || type === "pump") ? <nav aria-label="Loại cữ ăn" className="mx-4 mt-4 grid grid-cols-3 gap-1 rounded-2xl border border-[var(--color-border)] bg-white p-1 sm:mx-6">
       {([
         ["breastfeeding", "Bú mẹ"], ["bottle", "Bú bình"], ["pump", "Hút sữa"],
-      ] as const).map(([tabType, label]) => <button key={tabType} onClick={() => router.replace(`/app/track/${tabType}`)} aria-current={type === tabType ? "page" : undefined} className={`min-h-11 rounded-xl px-2 text-sm font-extrabold transition-colors ${type === tabType ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "text-[var(--color-muted)] hover:bg-zinc-50"}`}>{label}</button>)}
+      ] as const).map(([tabType, label]) => <button key={tabType} onClick={() => router.replace(`/app/track/${tabType}${returnHref === "/app/history" ? "?from=history" : ""}`)} aria-current={type === tabType ? "page" : undefined} className={`min-h-11 rounded-xl px-2 text-sm font-extrabold transition-colors ${type === tabType ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "text-[var(--color-muted)] hover:bg-zinc-50"}`}>{label}</button>)}
     </nav> : null}
 
     <main className="space-y-4 px-4 py-5 sm:px-6">

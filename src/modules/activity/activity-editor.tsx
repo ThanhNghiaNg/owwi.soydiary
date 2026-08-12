@@ -63,7 +63,7 @@ function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
   if (activity?.type === "solid" || activity?.type === "custom") return { label: activity.label };
   if (type === "bottle") return { amountMl: 90, milkType: "breast-milk" };
   if (type === "pump") return { leftMl: 90, rightMl: 40 };
-  if (type === "diaper") return { diaperType: "poop", color: "Brown", consistency: "Soft" };
+  if (type === "diaper") return { diaperType: "poop", color: "Yellow", consistency: "Soft" };
   if (type === "tummy") return { durationMinutes: 0, label: "Nằm sấp" };
   if (type === "solid") return { label: "Ăn dặm" };
   if (type === "custom") return { label: "Hoạt động khác" };
@@ -189,7 +189,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     if (timer) updateBreastfeedingDraft({ note: nextNote });
   }
 
-  return <div className="app-page pb-4">
+  return <div className="app-page min-w-0 max-w-full overflow-x-clip pb-4">
     <header className="rounded-b-[2rem] bg-[var(--color-primary)] px-3 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white">
       <div className="flex items-center">
         <button onClick={() => editing ? router.push(returnHref) : router.back()} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition-colors hover:bg-white/15 active:bg-white/20" aria-label="Quay lại">
@@ -211,21 +211,21 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       ] as const).map(([tabType, label]) => <button key={tabType} onClick={() => router.replace(`/app/track/${tabType}${returnHref === "/app/history" ? "?from=history" : ""}`)} aria-current={type === tabType ? "page" : undefined} className={`min-h-11 rounded-xl px-2 text-sm font-extrabold transition-colors ${type === tabType ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "text-[var(--color-muted)] hover:bg-zinc-50"}`}>{label}</button>)}
     </nav> : null}
 
-    <main className="space-y-4 px-4 py-5 sm:px-6">
+    <main className="min-w-0 max-w-full space-y-4 overflow-x-hidden px-4 py-5 sm:px-6">
       {editing ? <p className="rounded-2xl bg-[var(--color-primary-soft)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--color-primary-strong)]">Chạm vào từng trường bên dưới để sửa. Loại hoạt động được giữ nguyên để dữ liệu thống kê luôn chính xác.</p> : null}
       <section className="surface-card p-4" aria-labelledby="time-title">
         <h2 id="time-title" className="mb-3 text-sm font-extrabold text-[var(--color-muted)]">Thời điểm</h2>
         <div className="space-y-3">
           <DateTimeRow icon={<CalendarIcon className="h-5 w-5" />} label="Ngày">
-            <input aria-label="Ngày diễn ra" value={displayedDate} onChange={(event) => changeDate(event.target.value)} type="date" className="min-h-11 min-w-0 max-w-[180px] rounded-xl bg-[#f4f1f7] px-3 py-2 text-right text-sm font-bold outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+            <input aria-label="Ngày diễn ra" value={displayedDate} onChange={(event) => changeDate(event.target.value)} type="date" className="min-h-11 min-w-0 w-[46vw] max-w-[180px] rounded-xl bg-[#f4f1f7] px-3 py-2 text-right text-base font-bold outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
           </DateTimeRow>
           <DateTimeRow icon={<ClockIcon className="h-5 w-5" />} label="Giờ">
-            <input aria-label="Giờ diễn ra" value={displayedTime} onChange={(event) => changeTime(event.target.value)} type="time" className="min-h-11 min-w-0 max-w-[140px] rounded-xl bg-[#f4f1f7] px-3 py-2 text-right text-sm font-bold outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+            <input aria-label="Giờ diễn ra" value={displayedTime} onChange={(event) => changeTime(event.target.value)} type="time" className="min-h-11 min-w-0 w-[42vw] max-w-[140px] rounded-xl bg-[#f4f1f7] px-3 py-2 text-right text-base font-bold outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
           </DateTimeRow>
         </div>
       </section>
 
-      <section className="surface-card p-5">
+      <section className="surface-card min-w-0 max-w-full overflow-hidden p-5">
         {type === "breastfeeding" ? editing
           ? <BreastEditFields fields={fields} setField={field} />
           : <BreastFields timer={timer} now={timerNow} draft={{ babyId, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: displayedNote }} />
@@ -250,7 +250,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       </button> : null}
     </main>
 
-    <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto w-full min-w-[300px] max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-4 pt-3 backdrop-blur-xl sm:px-6">
+    <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-4 pt-3 backdrop-blur-xl sm:px-6">
       <button onClick={save} disabled={busy || (editing && saved) || (type === "breastfeeding" && totalBreast === 0)} className="primary-button w-full">
         {busy ? "Đang lưu…" : editing ? saved ? "Đã lưu" : "Lưu thay đổi" : "Lưu hoạt động"}
       </button>
@@ -381,9 +381,9 @@ function DiaperFields({ fields, setField }: { fields: Fields; setField: (name: s
 }
 
 function OptionRow({ title, options, selected, onPick }: { title: string; options: PickOption[]; selected: string; onPick: (value: string) => void }) {
-  return <fieldset className="mt-6">
+  return <fieldset className="mt-6 min-w-0 max-w-full">
     <legend className="mb-3 text-sm font-extrabold">{title}</legend>
-    <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+    <div className="no-scrollbar flex w-full max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1 pr-1">
       {options.map((option) => <button key={option.value} onClick={() => onPick(option.value)} className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold transition-colors ${selected === option.value ? "bg-[var(--color-accent)] text-white" : "bg-[#f2eff5] text-[var(--color-muted)] hover:bg-[#e9e4ed]"}`}>{option.label}</button>)}
     </div>
   </fieldset>;

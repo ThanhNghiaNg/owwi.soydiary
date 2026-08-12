@@ -6,7 +6,7 @@ export default async function LoginPage() {
   const session = await auth();
   if (session?.user) redirect("/app");
 
-  return <main className="flex min-h-dvh min-w-[300px] items-center justify-center bg-[var(--color-canvas)] p-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
+  return <main className="flex min-h-dvh min-w-0 items-center justify-center bg-[var(--color-canvas)] p-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
     <section className="surface-card w-full max-w-sm p-7 sm:p-8">
       <div className="mb-8 text-center">
         <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-[1.35rem] bg-[var(--color-primary)] text-white shadow-[0_10px_24px_rgba(109,76,196,0.2)]">

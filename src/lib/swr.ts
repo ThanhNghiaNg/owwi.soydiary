@@ -44,7 +44,7 @@ function matchesActivityRequest(key: string, activity: ActivityDto) {
 
 function limitForKey(key: string) {
   const raw = Number(new URL(key, "http://local").searchParams.get("limit") ?? 100);
-  return Number.isFinite(raw) ? Math.min(1000, Math.max(1, Math.trunc(raw))) : 100;
+  return Number.isFinite(raw) ? Math.min(5000, Math.max(1, Math.trunc(raw))) : 100;
 }
 
 function activityKeys(cache: Cache) {

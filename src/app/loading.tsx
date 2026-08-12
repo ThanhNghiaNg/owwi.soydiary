@@ -1,1 +1,1 @@
-export default function RootLoading(){ return <div className="min-h-dvh min-w-[300px] animate-pulse bg-[var(--color-canvas)]"><div className="h-32 rounded-b-[2rem] bg-[var(--color-primary)]"/><div className="mx-auto mt-7 h-64 w-[90%] max-w-md rounded-3xl bg-white shadow-sm"/></div>; }
+export default function RootLoading(){ return <div className="min-h-dvh min-w-0 animate-pulse bg-[var(--color-canvas)]"><div className="h-32 rounded-b-[2rem] bg-[var(--color-primary)]"/><div className="mx-auto mt-7 h-64 w-[90%] max-w-md rounded-3xl bg-white shadow-sm"/></div>; }

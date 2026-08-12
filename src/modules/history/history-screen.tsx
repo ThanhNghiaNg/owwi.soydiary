@@ -68,7 +68,7 @@ export function HistoryScreen() {
           <h2 id="history-quick-track-title" className="text-lg font-extrabold tracking-tight">Ghi nhanh</h2>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">Chạm để ghi một hoạt động mới</p>
         </div>
-        <div className="no-scrollbar -mx-4 mt-3 flex snap-x gap-2 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
+        <div className="no-scrollbar -mx-4 mt-3 flex snap-x gap-2 overflow-x-auto overscroll-x-contain px-4 pb-2 sm:-mx-6 sm:px-6">
           {quickActivities.map((item) => <Link
               key={item.type}
               href={`/app/track/${item.type}?from=history`}
@@ -226,8 +226,8 @@ function DateRangeDialog({ range, onClose, onApply }: { range: HistoryRange; onC
       <p className="mt-1 text-sm text-[var(--color-muted)]">Xem nhanh theo mốc có sẵn hoặc chọn ngày tùy ý.</p>
 
       <div className="surface-card mt-5 grid grid-cols-2 gap-3 p-4">
-        <label className="min-w-0 text-sm font-extrabold">Từ ngày<input type="date" value={start} max={end} onChange={(event) => setStart(event.target.value)} className="field-control mt-2 min-w-0 px-3 text-sm" /></label>
-        <label className="min-w-0 text-sm font-extrabold">Đến ngày<input type="date" value={end} min={start} onChange={(event) => setEnd(event.target.value)} className="field-control mt-2 min-w-0 px-3 text-sm" /></label>
+        <label className="min-w-0 text-sm font-extrabold">Từ ngày<input type="date" value={start} max={end} onChange={(event) => setStart(event.target.value)} className="field-control mt-2 min-w-0 px-3 text-base" /></label>
+        <label className="min-w-0 text-sm font-extrabold">Đến ngày<input type="date" value={end} min={start} onChange={(event) => setEnd(event.target.value)} className="field-control mt-2 min-w-0 px-3 text-base" /></label>
         <button disabled={!valid} onClick={() => onApply({ preset: "custom", start, end })} className="primary-button col-span-2 mt-1 w-full">Áp dụng khoảng ngày</button>
       </div>
 

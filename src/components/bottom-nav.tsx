@@ -18,7 +18,7 @@ export function BottomNav() {
   }
 
   if (pathname.includes("/track/") || pathname.includes("/activity/")) return null;
-  return <nav aria-label="Điều hướng chính" className="safe-bottom fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full min-w-[300px] max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-3 pt-2 backdrop-blur-xl">
+  return <nav aria-label="Điều hướng chính" className="safe-bottom fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full min-w-0 max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-3 pt-2 backdrop-blur-xl">
     {tabs.map(({ href, label, Icon }) => {
       const active = href === "/app" ? visualPath.selectedPath === href : visualPath.selectedPath.startsWith(href);
       return <Link

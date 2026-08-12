@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const rawType = request.nextUrl.searchParams.get("type");
   const type = rawType && allowedTypes.has(rawType as ActivityType) ? rawType as ActivityType : undefined;
   const rawLimit = Number(request.nextUrl.searchParams.get("limit") ?? 100);
-  const limit = Number.isFinite(rawLimit) ? Math.min(1000, Math.max(1, Math.trunc(rawLimit))) : 100;
+  const limit = Number.isFinite(rawLimit) ? Math.min(5000, Math.max(1, Math.trunc(rawLimit))) : 100;
   const rawFrom = request.nextUrl.searchParams.get("from");
   const rawTo = request.nextUrl.searchParams.get("to");
   const from = rawFrom && !Number.isNaN(Date.parse(rawFrom)) ? new Date(rawFrom).toISOString() : undefined;

@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { BabyDto } from "@/modules/baby/baby.dto";
-import type { ActivityDto } from "@/modules/activity/activity.dto";
 import { ACTIVITY_REGISTRY, getActivityMeta } from "@/modules/activity/activity.registry";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
 import { babyAgeSentence, babyAgeText, formatClock, relativeFromNow } from "@/lib/date";
@@ -10,12 +8,12 @@ import { ArrowUpRightIcon, CheckIcon } from "@/components/icons";
 import { useHomeData } from "./use-home-data";
 import { activityDetail } from "@/modules/activity/activity-format";
 import { ProfileMenu } from "@/components/profile-menu";
+import { useInitialAppData } from "@/components/data-cache-provider";
 
-type AccountSummary = { name: string | null | undefined; email: string | null | undefined };
-
-export function HomeScreen({ serverBaby, serverActivities, account }: { serverBaby: BabyDto; serverActivities: ActivityDto[]; account: AccountSummary }) {
-  const { baby, activities, syncing } = useHomeData(serverBaby, serverActivities);
-  const b = baby ?? serverBaby;
+export function HomeScreen() {
+  const { baby: initialBaby, account } = useInitialAppData();
+  const { baby, activities, syncing } = useHomeData();
+  const b = baby ?? initialBaby;
 
   return <div className="app-page">
     <header className="rounded-b-[2rem] bg-[var(--color-primary)] px-5 pb-7 pt-[max(1.25rem,env(safe-area-inset-top))] text-white">

@@ -25,6 +25,7 @@ export function ActivityAsset({ type, size = 64, className = "" }: ActivityAsset
       width={size}
       height={size}
       sizes={`${size}px`}
+      unoptimized
       className={`pointer-events-none select-none object-contain ${className}`}
     />
   );

@@ -2,13 +2,14 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSWRConfig } from "swr";
 import type { ActivityDto, ActivityInput, ActivityType } from "./activity.dto";
 import { getActivityMeta } from "./activity.registry";
 import { ActivityAsset } from "./activity-asset";
 import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon, TrashIcon } from "@/components/icons";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
-import { cacheKeys, readCache, writeCache } from "@/lib/cache";
+import { removeActivityCaches, upsertActivityCaches } from "@/lib/swr";
 import {
   clearBreastfeedingTimer,
   formatTimerDuration,
@@ -72,6 +73,7 @@ function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
 
 export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: { type: ActivityType; babyId: string; activity?: ActivityDto; returnHref?: string }) {
   const router = useRouter();
+  const { cache, mutate } = useSWRConfig();
   const meta = getActivityMeta(type);
   const storedTimer = useBreastfeedingTimer();
   const editing = Boolean(activity);
@@ -132,19 +134,13 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         return;
       }
       const json = await response.json() as { activity: ActivityDto };
-      const keys = cacheKeys(babyId);
-      const cached = readCache<ActivityDto[]>(keys.activities) ?? [];
-      const nextCache = activity
-        ? cached.map((item) => item.id === json.activity.id ? json.activity : item).sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-        : [json.activity, ...cached].slice(0, 100);
-      writeCache(keys.activities, nextCache);
+      await upsertActivityCaches(cache, mutate, json.activity);
       if (activity) {
         setSaved(true);
         if ("vibrate" in navigator) navigator.vibrate(10);
       } else {
         if (type === "breastfeeding") clearBreastfeedingTimer();
         router.replace("/app");
-        router.refresh();
       }
     } catch {
       setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
@@ -164,12 +160,9 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         setError("Chưa thể xóa hoạt động. Bạn thử lại sau nhé.");
         return;
       }
-      const keys = cacheKeys(babyId);
-      const cached = readCache<ActivityDto[]>(keys.activities) ?? [];
-      writeCache(keys.activities, cached.filter((item) => item.id !== activity.id));
+      await removeActivityCaches(cache, mutate, activity.id);
       if ("vibrate" in navigator) navigator.vibrate(10);
       router.replace(returnHref);
-      router.refresh();
     } catch {
       setDeleteOpen(false);
       setError("Mất kết nối. Hoạt động chưa bị xóa, bạn thử lại nhé.");

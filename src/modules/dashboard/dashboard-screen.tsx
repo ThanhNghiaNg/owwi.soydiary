@@ -1,24 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { ActivityDto } from "@/modules/activity/activity.dto";
-import { cacheKeys, readCache, writeCache } from "@/lib/cache";
+import { useMemo } from "react";
+import useSWR from "swr";
+import { ACTIVITIES_KEY, type ActivitiesResponse } from "@/lib/swr";
 import { aggregateDashboard } from "./dashboard";
 import { BarChart, LineChart } from "./charts";
 import { TopHeader } from "@/components/top-header";
 
-export function DashboardScreen({ babyId }: { babyId: string }) {
-  const keys = cacheKeys(babyId);
-  const [activities, setActivities] = useState<ActivityDto[]>(() => readCache<ActivityDto[]>(keys.activities) ?? []);
+const emptyActivities: ActivitiesResponse["activities"] = [];
 
-  useEffect(() => {
-    void fetch("/api/activities", { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) return;
-      const json = await response.json() as { activities: ActivityDto[] };
-      setActivities(json.activities);
-      writeCache(keys.activities, json.activities);
-    });
-  }, [keys.activities]);
+export function DashboardScreen() {
+  const { data: response } = useSWR<ActivitiesResponse>(ACTIVITIES_KEY);
+  const activities = response?.activities ?? emptyActivities;
 
   const data = useMemo(() => aggregateDashboard(activities), [activities]);
   const cards = [

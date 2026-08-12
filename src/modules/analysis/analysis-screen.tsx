@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import { ChartIcon, CheckIcon, ClockIcon, SparkIcon } from "@/components/icons";
 import type { AnalysisResponse, AnalysisWindow } from "./analysis.dto";
 
@@ -17,36 +18,19 @@ function windowLabel(days: AnalysisWindow) {
 
 export function AnalysisScreen() {
   const [days, setDays] = useState<AnalysisWindow>(14);
-  const [result, setResult] = useState<AnalysisResponse | null>(null);
-  const [loadingSaved, setLoadingSaved] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
   const analysisControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch(`/api/analysis?days=${days}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json() as { result?: AnalysisResponse | null; error?: string };
-        if (!response.ok) throw new Error(payload.error || "Chưa thể tải kết quả phân tích đã lưu.");
-        setResult(payload.result ?? null);
-      })
-      .catch((requestError: unknown) => {
-        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
-        setError(requestError instanceof Error ? requestError.message : "Chưa thể tải kết quả phân tích đã lưu.");
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoadingSaved(false); });
-    return () => controller.abort();
-  }, [days]);
+  const analysisKey = `/api/analysis?days=${days}`;
+  const { data: saved, error: savedError, isLoading: loadingSaved, mutate } = useSWR<{ result: AnalysisResponse | null }>(analysisKey);
+  const result = saved?.result ?? null;
 
   useEffect(() => () => analysisControllerRef.current?.abort(), []);
 
   function selectWindow(nextDays: AnalysisWindow) {
     if (nextDays === days || analyzing) return;
     setDays(nextDays);
-    setResult(null);
     setError("");
-    setLoadingSaved(true);
   }
 
   async function analyze() {
@@ -69,7 +53,7 @@ export function AnalysisScreen() {
         setError("error" in payload && payload.error ? payload.error : "Chưa thể tạo phân tích. Vui lòng thử lại.");
         return;
       }
-      setResult(payload);
+      await mutate({ result: payload }, { revalidate: false });
     } catch (requestError) {
       if (requestError instanceof Error && requestError.name === "AbortError") {
         setError("Yêu cầu phân tích đã hết thời gian. Vui lòng thử lại.");
@@ -129,7 +113,7 @@ export function AnalysisScreen() {
       </section>}
     </> : <AnalysisResultView result={result} onRefresh={analyze} loading={analyzing} />}
 
-    {error ? <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error}</div> : null}
+    {error || savedError ? <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error || "Chưa thể tải kết quả phân tích đã lưu. Bạn thử lại sau nhé."}</div> : null}
     <p className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-xs leading-5 text-[var(--color-muted)]">Phân tích chỉ hỗ trợ bố mẹ đọc nhật ký thuận tiện hơn, không thay thế tư vấn hoặc chẩn đoán từ bác sĩ.</p>
   </main>;
 }

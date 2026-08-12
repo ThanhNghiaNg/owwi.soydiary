@@ -16,6 +16,7 @@
     "next-auth": "beta",
     "react": "latest",
     "react-dom": "latest",
+    "swr": "^2.5.0",
     "zod": "latest"
   },
   "devDependencies": {

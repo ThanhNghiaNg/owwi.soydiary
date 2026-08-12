@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import { CalendarIcon, ChevronDown, ChevronLeft, XIcon } from "@/components/icons";
 import { formatClock } from "@/lib/date";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
@@ -16,39 +17,26 @@ import {
   rangeToIso,
   type HistoryRange,
 } from "./history";
+import { type ActivitiesResponse } from "@/lib/swr";
 
 type HistoryTab = "timeline" | "summary";
 const historyOrder: ActivityType[] = ["breastfeeding", "diaper", "pump", "bottle", "sleep", "tummy", "solid", "custom"];
 const activityFilters = historyOrder.map((type) => ACTIVITY_REGISTRY.find((item) => item.type === type)!);
+const emptyActivities: ActivityDto[] = [];
 
 export function HistoryScreen() {
   const [tab, setTab] = useState<HistoryTab>("timeline");
   const [selectedType, setSelectedType] = useState<ActivityType | null>(null);
   const [range, setRange] = useState<HistoryRange>(() => makeHistoryRange("today"));
-  const [activities, setActivities] = useState<ActivityDto[]>([]);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(50);
-  const [reloadKey, setReloadKey] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const controller = new AbortController();
+  const activitiesKey = useMemo(() => {
     const { from, to } = rangeToIso(range);
     const params = new URLSearchParams({ from, to, limit: "1000" });
-    void fetch(`/api/activities?${params}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to load history");
-        const json = await response.json() as { activities: ActivityDto[] };
-        setActivities(json.activities);
-      })
-      .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
-        setError("Chưa thể tải lịch sử. Bạn thử lại sau nhé.");
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [range, reloadKey]);
+    return `/api/activities?${params}`;
+  }, [range]);
+  const { data: response, error, isLoading, mutate } = useSWR<ActivitiesResponse>(activitiesKey);
+  const activities = response?.activities ?? emptyActivities;
 
   const visibleActivities = useMemo(
     () => selectedType ? activities.filter((item) => item.type === selectedType) : activities,
@@ -58,9 +46,6 @@ export function HistoryScreen() {
   const summary = useMemo(() => buildHistorySummary(visibleActivities, range), [range, visibleActivities]);
   const closeRange = useCallback(() => setRangeOpen(false), []);
   const applyRange = useCallback((next: HistoryRange) => {
-    setLoading(true);
-    setError("");
-    setActivities([]);
     setVisibleCount(50);
     setRange(next);
     setRangeOpen(false);
@@ -123,11 +108,11 @@ export function HistoryScreen() {
         <CalendarIcon className="h-6 w-6 shrink-0 text-[var(--color-primary-strong)]" />
       </button>
 
-      {error ? <div role="alert" className="mt-4 flex items-center gap-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]"><p className="min-w-0 flex-1">{error}</p><button onClick={() => { setLoading(true); setError(""); setReloadKey((key) => key + 1); }} className="min-h-11 shrink-0 rounded-xl bg-white px-3 font-extrabold shadow-sm">Thử lại</button></div> : null}
-      {loading && activities.length === 0 ? <HistorySkeleton /> : null}
+      {error ? <div role="alert" className="mt-4 flex items-center gap-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]"><p className="min-w-0 flex-1">Chưa thể tải lịch sử. Bạn thử lại sau nhé.</p><button onClick={() => { void mutate(); }} className="min-h-11 shrink-0 rounded-xl bg-white px-3 font-extrabold shadow-sm">Thử lại</button></div> : null}
+      {isLoading && activities.length === 0 ? <HistorySkeleton /> : null}
 
       <div id="history-panel" role="tabpanel" aria-labelledby={tab === "timeline" ? "history-tab-timeline" : "history-tab-summary"}>
-      {!loading || activities.length > 0 ? tab === "timeline"
+      {!isLoading || activities.length > 0 ? tab === "timeline"
         ? <Timeline groups={timelineGroups} filtered={Boolean(selectedType)} hasMore={visibleActivities.length > visibleCount} onLoadMore={() => setVisibleCount((count) => count + 50)} />
         : <Summary sections={summary} filtered={Boolean(selectedType)} />
       : null}

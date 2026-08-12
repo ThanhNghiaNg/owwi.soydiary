@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { ChartIcon, CheckIcon, ClockIcon, SparkIcon } from "@/components/icons";
+import { ANALYSIS_KEY, broadcastDataChange } from "@/lib/swr";
 import type { AnalysisResponse, AnalysisWindow } from "./analysis.dto";
 
 const analysisWindows: Array<{ days: AnalysisWindow; label: string }> = [
@@ -21,7 +22,7 @@ export function AnalysisScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
   const analysisControllerRef = useRef<AbortController | null>(null);
-  const analysisKey = `/api/analysis?days=${days}`;
+  const analysisKey = `${ANALYSIS_KEY}?days=${days}`;
   const { data: saved, error: savedError, isLoading: loadingSaved, mutate } = useSWR<{ result: AnalysisResponse | null }>(analysisKey);
   const result = saved?.result ?? null;
 
@@ -54,6 +55,8 @@ export function AnalysisScreen() {
         return;
       }
       await mutate({ result: payload }, { revalidate: false });
+      broadcastDataChange("analysis");
+      void mutate();
     } catch (requestError) {
       if (requestError instanceof Error && requestError.name === "AbortError") {
         setError("Yêu cầu phân tích đã hết thời gian. Vui lòng thử lại.");

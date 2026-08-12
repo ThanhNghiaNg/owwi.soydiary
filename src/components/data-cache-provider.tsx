@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { SWRConfig } from "swr";
-import { ACTIVITIES_KEY, BABY_KEY, fetchJson } from "@/lib/swr";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { SWRConfig, useSWRConfig } from "swr";
+import { ACTIVITIES_KEY, BABY_KEY, DATA_SYNC_CHANNEL, fetchJson, revalidateResourceCaches, type DataResource } from "@/lib/swr";
 import type { BabyDto } from "@/modules/baby/baby.dto";
 import type { ActivityDto } from "@/modules/activity/activity.dto";
 
@@ -21,10 +21,11 @@ const InitialAppDataContext = createContext<InitialAppData | null>(null);
 
 const swrOptions = {
   fetcher: fetchJson,
-  revalidateOnFocus: false,
-  revalidateIfStale: false,
+  revalidateOnFocus: true,
+  revalidateIfStale: true,
   revalidateOnReconnect: true,
   dedupingInterval: 60_000,
+  focusThrottleInterval: 60_000,
   shouldRetryOnError: false,
 } as const;
 
@@ -39,8 +40,26 @@ export function DataCacheProvider({ children, baby, activities, account }: { chi
   }), [activities, baby]);
 
   return <InitialAppDataContext.Provider value={initialData}>
-    <SWRConfig value={config}>{children}</SWRConfig>
+    <SWRConfig value={config}><CacheSyncListener />{children}</SWRConfig>
   </InitialAppDataContext.Provider>;
+}
+
+function CacheSyncListener() {
+  const { cache, mutate } = useSWRConfig();
+
+  useEffect(() => {
+    if (!("BroadcastChannel" in window)) return;
+    const channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
+    channel.addEventListener("message", (event: MessageEvent<{ resource?: DataResource }>) => {
+      const resource = event.data?.resource;
+      if (resource === "activities" || resource === "baby" || resource === "analysis") {
+        void revalidateResourceCaches(cache, mutate, resource);
+      }
+    });
+    return () => channel.close();
+  }, [cache, mutate]);
+
+  return null;
 }
 
 export function useInitialAppData() {

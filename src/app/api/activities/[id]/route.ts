@@ -5,6 +5,8 @@ import { activityInputSchema } from "@/modules/activity/activity.dto";
 import { deleteActivity, getActivityById, updateActivity } from "@/modules/activity/activity.repository";
 import { toActivityDto } from "@/modules/activity/activity.mapper";
 
+const privateNoStore = { "Cache-Control": "private, no-store" };
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -21,7 +23,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const updated = await updateActivity(session.user.id, baby._id.toHexString(), id, parsed.data);
   if (!updated) return NextResponse.json({ error: "Activity not found" }, { status: 404 });
-  return NextResponse.json({ activity: toActivityDto(updated) });
+  return NextResponse.json({ activity: toActivityDto(updated) }, { headers: privateNoStore });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -32,5 +34,5 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params;
   const deleted = await deleteActivity(session.user.id, baby._id.toHexString(), id);
   if (!deleted) return NextResponse.json({ error: "Activity not found" }, { status: 404 });
-  return NextResponse.json({ deleted: true });
+  return NextResponse.json({ deleted: true }, { headers: privateNoStore });
 }

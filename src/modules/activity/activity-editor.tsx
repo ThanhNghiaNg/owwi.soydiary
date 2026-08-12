@@ -138,9 +138,11 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       if (activity) {
         setSaved(true);
         if ("vibrate" in navigator) navigator.vibrate(10);
+        router.refresh();
       } else {
         if (type === "breastfeeding") clearBreastfeedingTimer();
         router.replace(returnHref);
+        router.refresh();
       }
     } catch {
       setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
@@ -163,6 +165,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       await removeActivityCaches(cache, mutate, activity.id);
       if ("vibrate" in navigator) navigator.vibrate(10);
       router.replace(returnHref);
+      router.refresh();
     } catch {
       setDeleteOpen(false);
       setError("Mất kết nối. Hoạt động chưa bị xóa, bạn thử lại nhé.");

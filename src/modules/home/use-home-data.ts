@@ -6,8 +6,8 @@ import { useInitialAppData } from "@/components/data-cache-provider";
 
 export function useHomeData() {
   const { baby: initialBaby, activities: initialActivities } = useInitialAppData();
-  const babyState = useSWR<BabyResponse<BabyDto>>(BABY_KEY, { revalidateOnMount: false });
-  const activitiesState = useSWR<ActivitiesResponse>(ACTIVITIES_KEY, { revalidateOnMount: false });
+  const babyState = useSWR<BabyResponse<BabyDto>>(BABY_KEY);
+  const activitiesState = useSWR<ActivitiesResponse>(ACTIVITIES_KEY);
 
   return {
     baby: babyState.data?.baby ?? initialBaby,

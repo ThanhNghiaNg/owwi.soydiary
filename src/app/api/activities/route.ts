@@ -6,12 +6,13 @@ import { createActivity, listActivities } from "@/modules/activity/activity.repo
 import { toActivityDto } from "@/modules/activity/activity.mapper";
 
 const allowedTypes = new Set<ActivityType>(["breastfeeding","bottle","pump","diaper","sleep","tummy","solid","custom"]);
+const privateNoStore = { "Cache-Control": "private, no-store" };
 
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const baby = await getBabyByOwner(session.user.id);
-  if (!baby?._id) return NextResponse.json({ activities: [] });
+  if (!baby?._id) return NextResponse.json({ activities: [] }, { headers: privateNoStore });
   const rawType = request.nextUrl.searchParams.get("type");
   const type = rawType && allowedTypes.has(rawType as ActivityType) ? rawType as ActivityType : undefined;
   const rawLimit = Number(request.nextUrl.searchParams.get("limit") ?? 100);
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
   const to = rawTo && !Number.isNaN(Date.parse(rawTo)) ? new Date(rawTo).toISOString() : undefined;
   if (from && to && from > to) return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
   const docs = await listActivities(session.user.id, baby._id.toHexString(), limit, type, from, to);
-  return NextResponse.json({ activities: docs.map(toActivityDto), syncedAt: new Date().toISOString() });
+  return NextResponse.json({ activities: docs.map(toActivityDto), syncedAt: new Date().toISOString() }, { headers: privateNoStore });
 }
 
 export async function POST(request: Request) {
@@ -36,5 +37,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Wake time must be after sleep time" }, { status: 400 });
   }
   const doc = await createActivity(session.user.id, baby._id.toHexString(), parsed.data);
-  return NextResponse.json({ activity: toActivityDto(doc) }, { status: 201 });
+  return NextResponse.json({ activity: toActivityDto(doc) }, { status: 201, headers: privateNoStore });
 }

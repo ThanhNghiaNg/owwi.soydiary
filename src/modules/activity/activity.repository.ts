@@ -1,4 +1,5 @@
 import { ObjectId, type Filter } from "mongodb";
+import { createHash } from "node:crypto";
 import { db } from "@/lib/mongodb";
 import type { ActivityDocument } from "./activity.model";
 import type { ActivityInput, ActivityType } from "./activity.dto";
@@ -23,10 +24,24 @@ export async function listActivities(ownerId: string, babyId: string, limit = 50
   return (await collection()).find(query).sort({ occurredAt: -1 }).limit(limit).toArray();
 }
 
-export async function createActivity(ownerId: string, babyId: string, input: ActivityInput) {
+export async function createActivity(ownerId: string, babyId: string, input: ActivityInput, clientMutationId?: string) {
   const now = new Date();
-  const doc = { ...input, ownerId, babyId: new ObjectId(babyId), createdAt: now, updatedAt: now } as ActivityDocument;
-  const result = await (await collection()).insertOne(doc);
+  const documentId = clientMutationId
+    ? new ObjectId(createHash("sha256").update(`${ownerId}:${babyId}:${clientMutationId}`).digest("hex").slice(0, 24))
+    : new ObjectId();
+  const doc = { ...input, _id: documentId, ownerId, babyId: new ObjectId(babyId), createdAt: now, updatedAt: now } as ActivityDocument;
+  const col = await collection();
+  if (clientMutationId) {
+    const { _id: _documentId, ...insertFields } = doc;
+    const saved = await col.findOneAndUpdate(
+      { _id: documentId },
+      { $setOnInsert: insertFields },
+      { upsert: true, returnDocument: "after" },
+    );
+    if (!saved) throw new Error("Failed to create idempotent activity");
+    return saved;
+  }
+  const result = await col.insertOne(doc);
   return { ...doc, _id: result.insertedId };
 }
 

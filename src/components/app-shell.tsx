@@ -9,6 +9,7 @@ import type { BabyDto } from "@/modules/baby/baby.dto";
 import type { ActivityDto } from "@/modules/activity/activity.dto";
 import type { AccountSummary } from "./data-cache-provider";
 import { tabFromPath, TopTabPanels } from "./top-tab-panels";
+import { BreastfeedingAutoSave } from "./breastfeeding-auto-save";
 
 export function AppShell({ children, baby, activities, account }: { children: React.ReactNode; baby: BabyDto; activities: ActivityDto[]; account: AccountSummary }) {
   const pathname = usePathname();
@@ -20,6 +21,7 @@ export function AppShell({ children, baby, activities, account }: { children: Re
   const isTopTab = Boolean(tabFromPath(pathname));
 
   return <DataCacheProvider baby={baby} activities={activities} account={account}><div className="mx-auto min-h-dvh w-full min-w-0 max-w-[620px] overflow-x-clip bg-[var(--color-canvas)] shadow-[0_0_40px_rgba(46,36,59,0.08)]">
+    <BreastfeedingAutoSave babyId={baby.id} />
     <a href="#main-content" className="skip-link">Bỏ qua đến nội dung chính</a>
     <div id="main-content" className={bottomPadding}>
       <TopTabPanels pathname={pathname} visible={isTopTab} />

@@ -31,11 +31,14 @@ export async function POST(request: Request) {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const baby = await getBabyByOwner(session.user.id);
   if (!baby?._id) return NextResponse.json({ error: "Onboarding required" }, { status: 409 });
-  const parsed = activityInputSchema.safeParse(await request.json());
+  const body: unknown = await request.json();
+  const parsed = activityInputSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const rawMutationId = body && typeof body === "object" && "clientMutationId" in body ? (body as { clientMutationId?: unknown }).clientMutationId : undefined;
+  const clientMutationId = typeof rawMutationId === "string" && rawMutationId.length >= 8 && rawMutationId.length <= 200 ? rawMutationId : undefined;
   if (parsed.data.type === "sleep" && new Date(parsed.data.endedAt) < new Date(parsed.data.occurredAt)) {
     return NextResponse.json({ error: "Wake time must be after sleep time" }, { status: 400 });
   }
-  const doc = await createActivity(session.user.id, baby._id.toHexString(), parsed.data);
+  const doc = await createActivity(session.user.id, baby._id.toHexString(), parsed.data, clientMutationId);
   return NextResponse.json({ activity: toActivityDto(doc) }, { status: 201, headers: privateNoStore });
 }

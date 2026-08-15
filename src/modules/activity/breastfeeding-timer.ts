@@ -17,6 +17,7 @@ export type BreastfeedingTimerState = {
 };
 
 const STORAGE_KEY = "babytrack:breastfeeding-timer:v1";
+export const BREASTFEEDING_AUTO_SAVE_PENDING_KEY = "babys-diary:pending-breastfeeding-autosave:v1";
 const listeners = new Set<() => void>();
 let memoryState: BreastfeedingTimerState | null | undefined;
 
@@ -138,8 +139,19 @@ export function updateBreastfeedingDraft(draft: Partial<Pick<BreastfeedingTimerS
   publish({ ...current, ...draft });
 }
 
-export function clearBreastfeedingTimer() {
+export function clearBreastfeedingTimer({ preservePendingAutoSave = false }: { preservePendingAutoSave?: boolean } = {}) {
   publish(null);
+  if (!preservePendingAutoSave && typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(BREASTFEEDING_AUTO_SAVE_PENDING_KEY);
+    } catch {
+      // The in-memory timer is still cleared when persistent storage is unavailable.
+    }
+  }
+}
+
+export function breastfeedingTimerMutationId(state: Pick<BreastfeedingTimerState, "babyId" | "occurredAt">) {
+  return `breastfeeding-autosave:${state.babyId}:${state.occurredAt}`;
 }
 
 export function useBreastfeedingTimer() {

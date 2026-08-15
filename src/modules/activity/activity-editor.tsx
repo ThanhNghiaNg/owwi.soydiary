@@ -12,6 +12,7 @@ import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "
 import { removeActivityCaches, upsertActivityCaches } from "@/lib/swr";
 import {
   clearBreastfeedingTimer,
+  breastfeedingTimerMutationId,
   formatTimerDuration,
   getBreastfeedingElapsed,
   toggleBreastSide,
@@ -124,10 +125,13 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       const finalPayload = type === "breastfeeding" && timer
         ? { ...payload, leftSeconds: currentElapsed.leftSeconds, rightSeconds: currentElapsed.rightSeconds }
         : payload;
+      const requestPayload = !activity && type === "breastfeeding" && timer
+        ? { ...finalPayload, clientMutationId: breastfeedingTimerMutationId(timer) }
+        : finalPayload;
       const response = await fetch(activity ? `/api/activities/${activity.id}` : "/api/activities", {
         method: activity ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(finalPayload),
+        body: JSON.stringify(requestPayload),
       });
       if (!response.ok) {
         setError("Chưa thể lưu hoạt động. Bạn kiểm tra lại thông tin nhé.");

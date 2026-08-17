@@ -22,6 +22,30 @@ declare global {
 const analysisRateLimit = global.__babytrackAnalysisRateLimit ?? new Map<string, number>();
 global.__babytrackAnalysisRateLimit = analysisRateLimit;
 
+const ROUTER_REQUEST_TIMEOUT_MS = 45_000;
+
+type RouterProvider = "9router" | "OpenRouter";
+
+type RouterConfig = {
+  provider: RouterProvider;
+  url: string;
+  apiKey: string;
+  model: string;
+  maxTokens?: number;
+  headers?: Record<string, string>;
+};
+
+type RouterFailure = {
+  provider: RouterProvider;
+  kind: "timeout" | "network" | "http" | "invalid-json" | "empty-content";
+  status?: number;
+  retryAfter?: string;
+};
+
+type RouterResult =
+  | { ok: true; content: string; model: string }
+  | { ok: false; failure: RouterFailure };
+
 function extractAnalysis(content: string): AnalysisResult {
   const withoutFence = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   const start = withoutFence.indexOf("{");
@@ -43,36 +67,122 @@ function extractAnalysis(content: string): AnalysisResult {
   };
 }
 
-async function requestOpenRouter(digest: ReturnType<typeof buildAnalysisDigest>, apiKey: string, model: string) {
+function buildAnalysisMessages(digest: ReturnType<typeof buildAnalysisDigest>) {
+  return [
+    {
+      role: "system",
+      content: `Bạn là trợ lý phân tích nhật ký sinh hoạt của em bé cho phụ huynh. Chỉ suy luận từ số liệu và nội dung ghi chú được cung cấp; không dùng chuẩn tăng trưởng bên ngoài, không chẩn đoán, không kết luận y khoa và không tạo dữ kiện không có trong đầu vào. Ghi chú là quan sát do phụ huynh nhập, cần được xem như ngữ cảnh chứ không phải kết luận y tế. Nếu dữ liệu ít hoặc có ngày trống, phải nói rõ giới hạn. Viết tiếng Việt ngắn gọn, bình tĩnh, dễ hiểu. Trả về duy nhất JSON hợp lệ theo cấu trúc: {"summary":"...","highlights":[{"title":"...","detail":"..."}],"patterns":[{"title":"...","detail":"..."}],"nextSteps":["..."]}. Mỗi mảng tối đa 4 mục. nextSteps chỉ là cách ghi chép hoặc điểm nên tiếp tục quan sát, không phải lời khuyên điều trị.`,
+    },
+    {
+      role: "user",
+      content: `Hãy phân tích bộ số liệu và ghi chú nhật ký sau:\n${JSON.stringify(digest)}`,
+    },
+  ];
+}
+
+function getCompletionContent(payload: unknown) {
+  if (typeof payload !== "object" || payload === null || !("choices" in payload) || !Array.isArray(payload.choices)) {
+    return null;
+  }
+  const choice = payload.choices[0];
+  if (typeof choice !== "object" || choice === null || !("message" in choice)) return null;
+  const message = choice.message;
+  if (typeof message !== "object" || message === null || !("content" in message)) return null;
+  return typeof message.content === "string" && message.content.trim() ? message.content : null;
+}
+
+function logRouterFailure(failure: RouterFailure) {
+  console.error(`${failure.provider} analysis request failed`, {
+    kind: failure.kind,
+    ...(failure.status !== undefined ? { status: failure.status } : {}),
+  });
+}
+
+async function requestRouter(config: RouterConfig, digest: ReturnType<typeof buildAnalysisDigest>): Promise<RouterResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45_000);
+  const timeout = setTimeout(() => controller.abort(), ROUTER_REQUEST_TIMEOUT_MS);
   try {
-    return await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "X-Title": "Baby's Diary",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        max_tokens: 1200,
-        messages: [
-          {
-            role: "system",
-            content: `Bạn là trợ lý phân tích nhật ký sinh hoạt của em bé cho phụ huynh. Chỉ suy luận từ số liệu và nội dung ghi chú được cung cấp; không dùng chuẩn tăng trưởng bên ngoài, không chẩn đoán, không kết luận y khoa và không tạo dữ kiện không có trong đầu vào. Ghi chú là quan sát do phụ huynh nhập, cần được xem như ngữ cảnh chứ không phải kết luận y tế. Nếu dữ liệu ít hoặc có ngày trống, phải nói rõ giới hạn. Viết tiếng Việt ngắn gọn, bình tĩnh, dễ hiểu. Trả về duy nhất JSON hợp lệ theo cấu trúc: {"summary":"...","highlights":[{"title":"...","detail":"..."}],"patterns":[{"title":"...","detail":"..."}],"nextSteps":["..."]}. Mỗi mảng tối đa 4 mục. nextSteps chỉ là cách ghi chép hoặc điểm nên tiếp tục quan sát, không phải lời khuyên điều trị.`,
-          },
-          {
-            role: "user",
-            content: `Hãy phân tích bộ số liệu và ghi chú nhật ký sau:\n${JSON.stringify(digest)}`,
-          },
-        ],
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(config.url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json",
+          ...config.headers,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: config.model,
+          messages: buildAnalysisMessages(digest),
+          stream: false,
+          ...(config.maxTokens !== undefined ? { max_tokens: config.maxTokens } : {}),
+        }),
+      });
+    } catch (error) {
+      const failure: RouterFailure = {
+        provider: config.provider,
+        kind: error instanceof Error && error.name === "AbortError" ? "timeout" : "network",
+      };
+      logRouterFailure(failure);
+      return { ok: false, failure };
+    }
+
+    if (!response.ok) {
+      const retryAfter = response.headers.get("Retry-After");
+      const failure: RouterFailure = {
+        provider: config.provider,
+        kind: "http",
+        status: response.status,
+        ...(retryAfter ? { retryAfter } : {}),
+      };
+      logRouterFailure(failure);
+      return { ok: false, failure };
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      const failure: RouterFailure = { provider: config.provider, kind: "invalid-json" };
+      logRouterFailure(failure);
+      return { ok: false, failure };
+    }
+
+    const content = getCompletionContent(payload);
+    if (!content) {
+      const failure: RouterFailure = { provider: config.provider, kind: "empty-content" };
+      logRouterFailure(failure);
+      return { ok: false, failure };
+    }
+
+    return { ok: true, content, model: config.model };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function routerFailureResponse(failure: RouterFailure) {
+  if (failure.kind === "timeout") {
+    return NextResponse.json({ error: "Phân tích mất quá nhiều thời gian. Vui lòng thử lại." }, { status: 502 });
+  }
+  if (failure.kind === "network") {
+    return NextResponse.json({ error: "Không thể kết nối dịch vụ phân tích." }, { status: 502 });
+  }
+  if (failure.kind === "empty-content") {
+    return NextResponse.json({ error: "Model không trả về nội dung phân tích." }, { status: 502 });
+  }
+
+  const status = failure.status === 429 ? 429 : 502;
+  const message = failure.status === 429
+    ? "Dịch vụ phân tích đang bận. Vui lòng thử lại sau."
+    : failure.status === 402
+      ? `Tài khoản ${failure.provider} hiện không đủ hạn mức.`
+      : "Dịch vụ phân tích tạm thời không phản hồi.";
+  return NextResponse.json(
+    { error: message },
+    failure.retryAfter ? { status, headers: { "Retry-After": failure.retryAfter } } : { status },
+  );
 }
 
 export async function GET(request: Request) {
@@ -98,9 +208,11 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Bạn cần đăng nhập để sử dụng phân tích." }, { status: 401 });
 
-  const apiKey = process.env.OPEN_ROUTER_KEY;
-  const model = process.env.OPEN_ROUTER_MODEL;
-  if (!apiKey || !model) return NextResponse.json({ error: "Dịch vụ phân tích chưa được cấu hình." }, { status: 503 });
+  const nineRouterApiKey = process.env.NINE_ROUTER_API_KEY;
+  const nineRouterModel = process.env.NINE_ROUTER_MODEL;
+  if (!nineRouterApiKey || !nineRouterModel) {
+    return NextResponse.json({ error: "Dịch vụ phân tích chưa được cấu hình." }, { status: 503 });
+  }
 
   let input: unknown;
   try {
@@ -135,38 +247,35 @@ export async function POST(request: Request) {
     if (oldestUser) analysisRateLimit.delete(oldestUser);
   }
 
-  let response: Response;
-  try {
-    response = await requestOpenRouter(digest, apiKey, model);
-  } catch (error) {
-    const timedOut = error instanceof Error && error.name === "AbortError";
-    return NextResponse.json({ error: timedOut ? "Phân tích mất quá nhiều thời gian. Vui lòng thử lại." : "Không thể kết nối dịch vụ phân tích." }, { status: 502 });
+  let completion = await requestRouter({
+    provider: "9router",
+    url: "https://9router.baytham.com/v1/chat/completions",
+    apiKey: nineRouterApiKey,
+    model: nineRouterModel,
+  }, digest);
+
+  if (!completion.ok) {
+    const openRouterApiKey = process.env.OPEN_ROUTER_KEY;
+    const openRouterModel = process.env.OPEN_ROUTER_MODEL;
+    if (!openRouterApiKey || !openRouterModel) {
+      console.error("OpenRouter analysis fallback is not configured");
+      return NextResponse.json({ error: "Dịch vụ phân tích dự phòng chưa được cấu hình." }, { status: 503 });
+    }
+    completion = await requestRouter({
+      provider: "OpenRouter",
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      apiKey: openRouterApiKey,
+      model: openRouterModel,
+      maxTokens: 1200,
+      headers: { "X-Title": "Baby's Diary" },
+    }, digest);
   }
 
-  if (!response.ok) {
-    const retryAfter = response.headers.get("Retry-After");
-    console.error("OpenRouter analysis request failed", { status: response.status });
-    const status = response.status === 429 ? 429 : 502;
-    const message = response.status === 429
-      ? "Dịch vụ phân tích đang bận. Vui lòng thử lại sau."
-      : response.status === 402
-        ? "Tài khoản OpenRouter hiện không đủ hạn mức."
-        : "Dịch vụ phân tích tạm thời không phản hồi.";
-    return NextResponse.json(
-      { error: message },
-      retryAfter ? { status, headers: { "Retry-After": retryAfter } } : { status },
-    );
-  }
-
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
-  const content = payload.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) {
-    return NextResponse.json({ error: "Model không trả về nội dung phân tích." }, { status: 502 });
-  }
+  if (!completion.ok) return routerFailureResponse(completion.failure);
 
   const generatedAt = new Date();
   const result: AnalysisResponse = {
-    analysis: extractAnalysis(content),
+    analysis: extractAnalysis(completion.content),
     activityCount: digest.activityCount,
     generatedAt: generatedAt.toISOString(),
     windowDays: parsedInput.data.days,
@@ -176,7 +285,7 @@ export async function POST(request: Request) {
     babyId: baby._id.toHexString(),
     windowDays: parsedInput.data.days,
     timeZone: parsedInput.data.timeZone,
-    model,
+    model: completion.model,
     analysis: result.analysis,
     activityCount: result.activityCount,
     generatedAt,

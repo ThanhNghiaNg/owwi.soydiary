@@ -19,11 +19,13 @@ AUTH_GOOGLE_ID=...
 AUTH_GOOGLE_SECRET=...
 AUTH_SECRET=...
 MONGODB_URI=...
+NINE_ROUTER_API_KEY=...
+NINE_ROUTER_MODEL=...
 OPEN_ROUTER_KEY=...
 OPEN_ROUTER_MODEL=...
 ```
 
-`AUTH_SECRET` is additionally required by Auth.js. Generate a strong random value (Auth.js CLI can generate one). The two `OPEN_ROUTER_*` values power the server-side Analysis feature; the key is never sent to the browser.
+`AUTH_SECRET` is additionally required by Auth.js. Generate a strong random value (Auth.js CLI can generate one). The server-side Analysis feature uses `NINE_ROUTER_*` first and falls back to `OPEN_ROUTER_*` only when 9router fails; neither API key is sent to the browser.
 
 For Google OAuth, add these authorized redirect URIs:
 - local: `http://localhost:3000/api/auth/callback/google`
@@ -38,7 +40,7 @@ npm run dev
 ## Deploy to Vercel
 1. Push this folder to GitHub/GitLab/Bitbucket.
 2. Import it in Vercel.
-3. Add the four environment variables above.
+3. Add all environment variables above.
 4. Deploy.
 5. Put the Vercel production callback URL into Google Cloud OAuth credentials.
 
@@ -65,4 +67,4 @@ The breastfeeding timer is owned by the protected app shell rather than the trac
 
 ## Analysis
 
-The Analysis tab can summarize the latest 7, 14, 30, or 90 days through OpenRouter. Activity notes are included in the model input, while the baby's name and birth date are omitted. The latest result for each time window is persisted in MongoDB and is regenerated only after an explicit user action.
+The Analysis tab can summarize the latest 7, 14, 30, or 90 days through 9router, with OpenRouter used only as a fallback when the primary request fails. Activity notes are included in the model input, while the baby's name and birth date are omitted. The latest result for each time window is persisted in MongoDB and is regenerated only after an explicit user action.

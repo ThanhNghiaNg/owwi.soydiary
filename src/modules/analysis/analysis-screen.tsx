@@ -40,7 +40,7 @@ export function AnalysisScreen() {
     analysisControllerRef.current = controller;
     setAnalyzing(true);
     setError("");
-    const timeout = window.setTimeout(() => controller.abort(), 55_000);
+    const timeout = window.setTimeout(() => controller.abort(), 120_000);
     try {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
       const response = await fetch("/api/analysis", {

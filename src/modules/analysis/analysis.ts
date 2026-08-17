@@ -53,7 +53,27 @@ function averageIntervalHours(activities: ActivityDto[]) {
   return value === null ? null : rounded(value);
 }
 
-export function buildAnalysisDigest(activities: ActivityDto[], timeZone: string, now = new Date(), days = 14) {
+function babyAgeDays(birthDate: string, now: Date, timeZone: string) {
+  const today = zonedDateKey(now, timeZone);
+  const birthTime = Date.parse(`${birthDate}T00:00:00Z`);
+  const todayTime = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(birthTime) || !Number.isFinite(todayTime)) return null;
+  return Math.max(0, Math.floor((todayTime - birthTime) / 86_400_000));
+}
+
+function babyAgeCompletedMonths(birthDate: string, now: Date, timeZone: string) {
+  const today = zonedDateKey(now, timeZone);
+  const [birthYear, birthMonth, birthDay] = birthDate.split("-").map(Number);
+  const [todayYear, todayMonth, todayDay] = today.split("-").map(Number);
+  if ([birthYear, birthMonth, birthDay, todayYear, todayMonth, todayDay].some((part) => part === undefined || !Number.isFinite(part))) {
+    return null;
+  }
+  let months = (todayYear! - birthYear!) * 12 + todayMonth! - birthMonth!;
+  if (todayDay! < birthDay!) months -= 1;
+  return Math.max(0, months);
+}
+
+export function buildAnalysisDigest(activities: ActivityDto[], timeZone: string, now = new Date(), days = 14, birthDate?: string) {
   const dateKeys = recentDateKeys(days, now, timeZone);
   const daily = new Map<string, DailyAnalysis>(dateKeys.map((date) => [date, {
     date,
@@ -105,12 +125,34 @@ export function buildAnalysisDigest(activities: ActivityDto[], timeZone: string,
     breastfeedingMinutes: rounded(row.breastfeedingMinutes),
     sleepHours: rounded(row.sleepHours),
   }));
+  const totals = rows.reduce((result, row) => ({
+    breastfeedingSessions: result.breastfeedingSessions + row.breastfeedingSessions,
+    sleepHours: result.sleepHours + row.sleepHours,
+    tummyMinutes: result.tummyMinutes + row.tummyMinutes,
+    solidMeals: result.solidMeals + row.solidMeals,
+  }), { breastfeedingSessions: 0, sleepHours: 0, tummyMinutes: 0, solidMeals: 0 });
+  const recordedDaysByCategory = {
+    breastfeeding: rows.filter((row) => row.breastfeedingSessions > 0).length,
+    sleep: rows.filter((row) => row.sleepSessions > 0).length,
+    tummy: rows.filter((row) => row.tummyMinutes > 0).length,
+    solid: rows.filter((row) => row.solidMeals > 0).length,
+  };
 
   return {
+    babyAgeDays: birthDate ? babyAgeDays(birthDate, now, timeZone) : null,
+    babyAgeCompletedMonths: birthDate ? babyAgeCompletedMonths(birthDate, now, timeZone) : null,
     timeZone,
     windowDays: days,
     activityCount: included.length,
     activeDays: rows.filter((row) => Object.entries(row).some(([key, value]) => key !== "date" && typeof value === "number" && value > 0)).length,
+    recordedDaysByCategory,
+    referenceComparisonMinimumRecordedDays: Math.ceil(days * 0.7),
+    recordedAveragesOnDaysWithEntries: {
+      breastfeedingSessions: recordedDaysByCategory.breastfeeding ? rounded(totals.breastfeedingSessions / recordedDaysByCategory.breastfeeding) : null,
+      sleepHours: recordedDaysByCategory.sleep ? rounded(totals.sleepHours / recordedDaysByCategory.sleep) : null,
+      tummyMinutes: recordedDaysByCategory.tummy ? rounded(totals.tummyMinutes / recordedDaysByCategory.tummy) : null,
+      solidMeals: recordedDaysByCategory.solid ? rounded(totals.solidMeals / recordedDaysByCategory.solid) : null,
+    },
     averages: {
       feedingIntervalHours: averageIntervalHours(included),
       breastfeedingSessionMinutes: breastDurations.length ? rounded(average(breastDurations) ?? 0) : null,

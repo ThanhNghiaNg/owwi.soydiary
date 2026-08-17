@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { analysisReferenceIds, isAnalysisReferenceId } from "./analysis.references";
 
-export const analysisResultSchema = z.object({
+const baseAnalysisResultSchema = z.object({
   summary: z.string().trim().min(1).max(1200),
   highlights: z.array(z.object({
     title: z.string().trim().min(1).max(100),
@@ -11,6 +12,16 @@ export const analysisResultSchema = z.object({
     detail: z.string().trim().min(1).max(500),
   })).max(4),
   nextSteps: z.array(z.string().trim().min(1).max(300)).max(4),
+});
+
+export const analysisResultSchema = baseAnalysisResultSchema.extend({
+  conclusion: z.string().trim().min(80).max(1600),
+  conclusionSourceIds: z.array(z.enum(analysisReferenceIds)).max(3).refine((ids) => new Set(ids).size === ids.length),
+});
+
+export const storedAnalysisResultSchema = baseAnalysisResultSchema.extend({
+  conclusion: z.string().trim().max(1600).optional().default(""),
+  conclusionSourceIds: z.array(z.string()).max(10).optional().default([]).transform((ids) => [...new Set(ids.filter(isAnalysisReferenceId))].slice(0, 3)),
 });
 
 export type AnalysisResult = z.infer<typeof analysisResultSchema>;

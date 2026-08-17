@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { ChartIcon, CheckIcon, ClockIcon, SparkIcon } from "@/components/icons";
+import { ArrowUpRightIcon, ChartIcon, CheckIcon, ClockIcon, SparkIcon } from "@/components/icons";
 import { ANALYSIS_KEY, broadcastDataChange } from "@/lib/swr";
 import type { AnalysisResponse, AnalysisWindow } from "./analysis.dto";
+import { getAnalysisReference } from "./analysis.references";
 
 const analysisWindows: Array<{ days: AnalysisWindow; label: string }> = [
   { days: 7, label: "1 tuần" },
@@ -75,6 +76,7 @@ export function AnalysisScreen() {
     { title: "Nhịp sinh hoạt", description: "Khoảng cách giữa các cữ ăn, giấc ngủ và lần thay tã.", Icon: ClockIcon },
     { title: `Xu hướng ${selectedLabel}`, description: "Sự thay đổi của lượng sữa, thời gian bú, ngủ và các hoạt động.", Icon: ChartIcon },
     { title: "Ghi chú và điểm đáng chú ý", description: "Kết hợp số liệu với nội dung bố mẹ đã ghi lại trong từng hoạt động.", Icon: SparkIcon },
+    { title: "Kết luận và đối chiếu", description: "Suy luận từ nhật ký và đối chiếu với mốc WHO phù hợp khi dữ liệu đủ cơ sở.", Icon: SparkIcon },
   ] as const;
 
   return <main className="space-y-5 p-5 sm:p-6">
@@ -117,12 +119,14 @@ export function AnalysisScreen() {
     </> : <AnalysisResultView result={result} onRefresh={analyze} loading={analyzing} />}
 
     {error || savedError ? <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error || "Chưa thể tải kết quả phân tích đã lưu. Bạn thử lại sau nhé."}</div> : null}
-    <p className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-xs leading-5 text-[var(--color-muted)]">Phân tích chỉ hỗ trợ bố mẹ đọc nhật ký thuận tiện hơn, không thay thế tư vấn hoặc chẩn đoán từ bác sĩ.</p>
+    <p className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm leading-6 text-[var(--color-muted)]">Phân tích chỉ hỗ trợ bố mẹ đọc nhật ký thuận tiện hơn, không thay thế tư vấn hoặc chẩn đoán từ bác sĩ. Các mốc WHO là khoảng khuyến nghị tham khảo, không phải mức trung bình hay đánh giá riêng cho bé.</p>
   </main>;
 }
 
 function AnalysisResultView({ result, onRefresh, loading }: { result: AnalysisResponse; onRefresh: () => void; loading: boolean }) {
   const generatedAt = new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(result.generatedAt));
+  const conclusion = typeof result.analysis.conclusion === "string" ? result.analysis.conclusion.trim() : "";
+  const conclusionSources = (result.analysis.conclusionSourceIds ?? []).map(getAnalysisReference).filter((source) => source !== undefined);
   return <div className="space-y-5">
     <section className="surface-card p-5">
       <div className="flex items-center gap-3">
@@ -134,6 +138,22 @@ function AnalysisResultView({ result, onRefresh, loading }: { result: AnalysisRe
 
     {result.analysis.highlights.length ? <ResultSection title="Điểm nổi bật" items={result.analysis.highlights} icon="spark" /> : null}
     {result.analysis.patterns.length ? <ResultSection title="Nhịp được ghi nhận" items={result.analysis.patterns} icon="chart" /> : null}
+
+    {conclusion ? <section className="surface-card p-5" aria-labelledby="analysis-conclusion-title">
+      <div className="flex items-center gap-3">
+        <div aria-hidden="true" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]"><SparkIcon className="h-5 w-5" /></div>
+        <div><p className="text-xs font-bold text-[var(--color-muted)]">{conclusionSources.length ? "Suy luận từ dữ liệu và mốc theo tuổi" : "Suy luận từ dữ liệu nhật ký"}</p><h2 id="analysis-conclusion-title" className="text-lg font-extrabold tracking-tight">Kết luận tham khảo</h2></div>
+      </div>
+      <p className="mt-4 whitespace-pre-line text-base leading-7 text-[var(--color-ink)]">{conclusion}</p>
+      {conclusionSources.length ? <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+        <p className="text-xs font-extrabold uppercase tracking-wide text-[var(--color-muted)]">Nguồn tham chiếu</p>
+        <ul className="mt-1 space-y-1">{conclusionSources.map((source) => <li key={source.id}>
+          <a href={source.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 py-2 text-sm font-bold leading-5 text-[var(--color-primary-strong)] underline underline-offset-4 transition-colors hover:text-[var(--color-primary)]">
+            <span>{source.label}</span><span aria-hidden="true"><ArrowUpRightIcon className="h-4 w-4 shrink-0" /></span><span className="sr-only">(mở trong tab mới)</span>
+          </a>
+        </li>)}</ul>
+      </div> : null}
+    </section> : null}
 
     {result.analysis.nextSteps.length ? <section className="surface-card p-5">
       <h2 className="text-lg font-extrabold tracking-tight">Nên tiếp tục quan sát</h2>

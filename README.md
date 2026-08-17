@@ -67,4 +67,4 @@ The breastfeeding timer is owned by the protected app shell rather than the trac
 
 ## Analysis
 
-The Analysis tab can summarize the latest 7, 14, 30, or 90 days through 9router, with OpenRouter used only as a fallback when the primary request fails. Activity notes are included in the model input, while the baby's name and birth date are omitted. The latest result for each time window is persisted in MongoDB and is regenerated only after an explicit user action.
+The Analysis tab can summarize the latest 7, 14, 30, or 90 days through 9router, with OpenRouter used only as a fallback when the primary request fails. Its conclusion combines diary-derived observations with a fixed catalog of age-appropriate WHO reference ranges and links back to the official sources it uses. Activity notes and the baby's derived age in days are included in the model input, while the baby's name and full birth date are omitted. The latest result for each time window is persisted in MongoDB and is regenerated only after an explicit user action.

@@ -12,6 +12,7 @@
   "dependencies": {
     "@auth/mongodb-adapter": "latest",
     "mongodb": "latest",
+    "mongoose": "^9.9.4",
     "next": "latest",
     "next-auth": "beta",
     "react": "latest",

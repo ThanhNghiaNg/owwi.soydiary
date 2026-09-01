@@ -18,3 +18,4 @@ export function ChevronDown({ className = "h-6 w-6" }: IconProps) { return <svg 
 export function TrashIcon({ className = "h-6 w-6" }: IconProps) { return <svg viewBox="0 0 24 24" className={className}><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" className={base}/></svg>; }
 export function LogOutIcon({ className = "h-6 w-6" }: IconProps) { return <svg viewBox="0 0 24 24" className={className}><path d="M10 5H5v14h5M14 8l4 4-4 4M9 12h9" className={base}/></svg>; }
 export function ProfileIcon({ className = "h-6 w-6" }: IconProps) { return <svg viewBox="0 0 24 24" className={className}><circle cx="12" cy="8" r="4" className={base}/><path d="M4.5 21a7.5 7.5 0 0 1 15 0" className={base}/></svg>; }
+export function CloudIcon({ className = "h-6 w-6" }: IconProps) { return <svg viewBox="0 0 24 24" className={className}><path d="M6.5 19h11a4.5 4.5 0 0 0 .6-9A6.5 6.5 0 0 0 5.7 8.4 5.5 5.5 0 0 0 6.5 19Z" className={base}/></svg>; }

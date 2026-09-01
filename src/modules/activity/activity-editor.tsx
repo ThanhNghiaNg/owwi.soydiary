@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import type { ActivityDto, ActivityInput, ActivityType } from "./activity.dto";
@@ -10,6 +10,7 @@ import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon, TrashIcon } 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
 import { removeActivityCaches, upsertActivityCaches } from "@/lib/swr";
+import { ActivityImages, uploadPendingActivityImages, type PendingActivityImage } from "./activity-images";
 import {
   clearBreastfeedingTimer,
   breastfeedingTimerMutationId,
@@ -85,6 +86,8 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const [date, setDate] = useState(() => localDateInputValue(occurredDate));
   const [time, setTime] = useState(() => localTimeInputValue(occurredDate));
   const [note, setNote] = useState(activity?.note ?? "");
+  const [images, setImages] = useState<PendingActivityImage[]>(activity?.images ?? []);
+  const uploadFolderKey = useRef(activity?.id ?? crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -98,7 +101,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const displayedNote = timer ? timer.note : note;
   const totalBreast = editing ? Number(fields.leftSeconds) + Number(fields.rightSeconds) : breastElapsed.totalSeconds;
   const payload = useMemo<ActivityInput | null>(() => {
-    const base = { type, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: timer?.note ?? note } as const;
+    const base = { type, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: timer?.note ?? note, images: images.map(({ url, storageKey }) => ({ url, storageKey })) } as const;
     switch (type) {
       case "breastfeeding": return { ...base, type, leftSeconds: editing ? Number(fields.leftSeconds) : breastElapsed.leftSeconds, rightSeconds: editing ? Number(fields.rightSeconds) : breastElapsed.rightSeconds };
       case "bottle": return { ...base, type, milkType: String(fields.milkType) as "breast-milk" | "formula" | "other", amountMl: Number(fields.amountMl) };
@@ -109,7 +112,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       case "solid": return { ...base, type, label: String(fields.label) };
       case "custom": return { ...base, type, label: String(fields.label) };
     }
-  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, note, time, timer?.note, timer?.occurredAt, type]);
+  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, images, note, time, timer?.note, timer?.occurredAt, type]);
 
   const field = useCallback((name: string, value: string | number) => {
     setFields((previous) => ({ ...previous, [name]: value }));
@@ -122,9 +125,11 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     setError("");
     try {
       const currentElapsed = getBreastfeedingElapsed(timer, Date.now());
+      const uploadedImages = await uploadPendingActivityImages(images, uploadFolderKey.current);
+      const finalPayloadBase = { ...payload, images: uploadedImages };
       const finalPayload = type === "breastfeeding" && timer
-        ? { ...payload, leftSeconds: currentElapsed.leftSeconds, rightSeconds: currentElapsed.rightSeconds }
-        : payload;
+        ? { ...finalPayloadBase, leftSeconds: currentElapsed.leftSeconds, rightSeconds: currentElapsed.rightSeconds }
+        : finalPayloadBase;
       const requestPayload = !activity && type === "breastfeeding" && timer
         ? { ...finalPayload, clientMutationId: breastfeedingTimerMutationId(timer) }
         : finalPayload;
@@ -138,6 +143,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         return;
       }
       const json = await response.json() as { activity: ActivityDto };
+      setImages(json.activity.images);
       await upsertActivityCaches(cache, mutate, json.activity);
       if (activity) {
         setSaved(true);
@@ -249,6 +255,8 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         <span className="mb-2 block text-sm font-extrabold">Ghi chú <span className="font-medium text-[var(--color-muted)]">(không bắt buộc)</span></span>
         <textarea value={displayedNote} onChange={(event) => changeNote(event.target.value)} className="field-control h-24 resize-none" placeholder="Ví dụ: Bé ăn ngon, ngủ sâu…" />
       </label>
+
+      <ActivityImages images={images} disabled={busy} onChange={(next) => { setImages(next); setSaved(false); }} />
 
       {error ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error}</p> : null}
       {saved ? <p role="status" className="rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-center text-sm font-extrabold text-[var(--color-accent)]">Đã lưu thay đổi</p> : null}

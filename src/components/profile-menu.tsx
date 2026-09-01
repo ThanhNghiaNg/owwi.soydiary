@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import { ConfirmDialog } from "./confirm-dialog";
-import { LogOutIcon, ProfileIcon } from "./icons";
+import { CloudIcon, LogOutIcon, ProfileIcon } from "./icons";
+import { StorageManager } from "@/modules/integrations/storage/storage-manager";
 
 type ProfileMenuProps = {
   accountName: string | null | undefined;
@@ -13,6 +14,7 @@ type ProfileMenuProps = {
 export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
   const menuId = useId();
@@ -111,6 +113,9 @@ export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
         </span>
       </div>
       <div role="separator" className="my-1 border-t border-[var(--color-border)]" />
+      <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setStorageOpen(true); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-extrabold transition-colors hover:bg-[var(--color-primary-soft)]">
+        <CloudIcon className="h-5 w-5 shrink-0" /> Quản lý storage
+      </button>
       <button
         ref={logoutOptionRef}
         type="button"
@@ -136,5 +141,6 @@ export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
       onConfirm={() => { void logout(); }}
       onClose={closeLogoutDialog}
     />
+    <StorageManager open={storageOpen} onClose={() => setStorageOpen(false)} />
   </div>;
 }

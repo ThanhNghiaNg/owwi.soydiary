@@ -3,6 +3,10 @@ import { z } from "zod";
 const base = z.object({
   occurredAt: z.string().datetime(),
   note: z.string().max(1000).default(""),
+  images: z.array(z.object({
+    url: z.string().min(1).max(2048),
+    storageKey: z.string().min(1).max(512),
+  })).max(20).default([]),
 });
 
 export const activityInputSchema = z.discriminatedUnion("type", [

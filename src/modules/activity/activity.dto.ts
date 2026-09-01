@@ -1,12 +1,16 @@
 import { z } from "zod";
+import { isSafeImageUrl } from "@/lib/validation/safe-image-url";
+import { MAX_ACTIVITY_IMAGES } from "@/modules/integrations/storage/storage.constants";
 
 const base = z.object({
   occurredAt: z.string().datetime(),
   note: z.string().max(1000).default(""),
   images: z.array(z.object({
-    url: z.string().min(1).max(2048),
+    url: z.string().min(1).max(2048).refine(isSafeImageUrl, "Invalid image URL"),
     storageKey: z.string().min(1).max(512),
-  })).max(20).default([]),
+    provider: z.enum(["cloudinary", "google-drive"]).optional(),
+    connectionId: z.string().min(1).max(200).optional(),
+  })).max(MAX_ACTIVITY_IMAGES).default([]),
 });
 
 export const activityInputSchema = z.discriminatedUnion("type", [

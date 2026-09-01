@@ -19,7 +19,6 @@ AUTH_GOOGLE_ID=...
 AUTH_GOOGLE_SECRET=...
 AUTH_SECRET=...
 MONGODB_URI=...
-NEXT_PUBLIC_APP_URL=http://localhost:3000
 GOOGLE_DRIVE_CLIENT_ID=... # optional, falls back to AUTH_GOOGLE_ID
 GOOGLE_DRIVE_CLIENT_SECRET=... # optional, falls back to AUTH_GOOGLE_SECRET
 NINE_ROUTER_API_KEY=...
@@ -38,7 +37,7 @@ For Google OAuth, add these authorized redirect URIs:
 
 ## Image storage
 
-Every activity can contain up to 20 JPG, PNG, WebP, GIF, or AVIF images (8 MB each). Selected files stay local as previews and are uploaded only when the activity is saved. Open the account menu and choose **Quản lý storage** to connect Cloudinary or Google Drive, switch the active destination, or disconnect an account. Cloudinary uses its MCP OAuth flow; Google Drive uses `GOOGLE_DRIVE_*` credentials when present and otherwise reuses the main Google OAuth client.
+Every activity can contain up to 20 JPG, PNG, WebP, GIF, or AVIF images (8 MB each). Selected files stay local as previews and are uploaded only when the activity is saved. Open the account menu and choose **Quản lý storage** to connect Cloudinary or Google Drive, switch the active destination, or disconnect an account. Cloudinary uses its MCP OAuth flow; Google Drive uses `GOOGLE_DRIVE_*` credentials when present and otherwise reuses the main Google OAuth client. Drive images remain private and are served through an authenticated, same-origin route.
 
 ## Run
 ```bash

@@ -4,6 +4,7 @@ import { connectMongoose } from "@/lib/db/mongoose";
 import { env, isGoogleDriveOAuthConfigured } from "@/lib/env";
 import { googleDriveAssetPath } from "@/lib/utils/google-drive-image-url";
 import { GoogleDriveConnectionModel } from "@/models/GoogleDriveConnection";
+import { STORAGE_ROOT_FOLDER } from "@/modules/integrations/storage/storage.constants";
 import { decryptGoogleDriveToken, encryptGoogleDriveToken } from "./token-crypto";
 
 const AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -35,6 +36,7 @@ type GoogleIdentity = {
   email?: string;
   name?: string;
 };
+type ValidGoogleIdentity = GoogleIdentity & { sub: string };
 
 type ValidAccess = {
   accessToken: string;
@@ -93,7 +95,7 @@ async function ensureGoogleDriveStorageReady() {
         { name: "google_drive_user_recent" },
       );
     })().catch((error) => {
-      globalState.googleDriveSetupPromise = undefined;
+      delete globalState.googleDriveSetupPromise;
       throw error;
     });
   }
@@ -119,15 +121,15 @@ function clientCredentials() {
   };
 }
 
-export function googleDriveRedirectUri() {
-  return new URL("/api/integrations/google-drive/callback", env.NEXT_PUBLIC_APP_URL).toString();
-}
-
-export function createGoogleDriveAuthorizationUrl(state: string, codeChallenge: string) {
+export function createGoogleDriveAuthorizationUrl(
+  state: string,
+  codeChallenge: string,
+  redirectUri: string,
+) {
   const { clientId } = clientCredentials();
   const url = new URL(AUTHORIZATION_ENDPOINT);
   url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", googleDriveRedirectUri());
+  url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", OAUTH_SCOPES.join(" "));
   url.searchParams.set("access_type", "offline");
@@ -166,14 +168,14 @@ async function tokenRequest(params: URLSearchParams): Promise<GoogleTokenPayload
   return payload;
 }
 
-async function getGoogleIdentity(accessToken: string): Promise<GoogleIdentity> {
+async function getGoogleIdentity(accessToken: string): Promise<ValidGoogleIdentity> {
   const response = await fetch(USER_INFO_ENDPOINT, {
     headers: { Authorization: `Bearer ${accessToken}`, accept: "application/json" },
     cache: "no-store",
   });
   const identity = (await response.json().catch(() => ({}))) as GoogleIdentity;
   if (!response.ok || !identity.sub) throw new Error("GOOGLE_DRIVE_CONNECTION_INVALID");
-  return identity;
+  return identity as ValidGoogleIdentity;
 }
 
 async function verifyGoogleDriveAccess(accessToken: string) {
@@ -189,12 +191,17 @@ function objectId(value: string) {
   return new Types.ObjectId(value);
 }
 
-export async function exchangeGoogleDriveCode(userId: string, code: string, codeVerifier: string) {
+export async function exchangeGoogleDriveCode(
+  userId: string,
+  code: string,
+  codeVerifier: string,
+  redirectUri: string,
+) {
   const payload = await tokenRequest(
     new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: googleDriveRedirectUri(),
+      redirect_uri: redirectUri,
       code_verifier: codeVerifier,
     }),
   );
@@ -305,7 +312,7 @@ export async function disconnectGoogleDriveConnection(userId: string, connection
   if (!connection) throw new Error("NOT_FOUND");
 
   // Revoking one token can revoke the combined Google grant for the same
-  // client/account. When Drive shares Auth.js credentials, only remove Soyplay's
+  // client/account. When Drive shares Auth.js credentials, only remove Soy Diary's
   // stored Drive tokens so unlinking storage cannot disrupt Google sign-in.
   if (!clientCredentials().sharedWithAuth) {
     try {
@@ -466,9 +473,13 @@ export async function getGoogleDriveConnectionUsage(
     const limitBytes = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
     return {
       usedBytes,
-      limitBytes,
-      remainingBytes: limitBytes ? Math.max(0, limitBytes - usedBytes) : undefined,
-      usedPercent: limitBytes ? Math.min(100, (usedBytes / limitBytes) * 100) : undefined,
+      ...(limitBytes
+        ? {
+            limitBytes,
+            remainingBytes: Math.max(0, limitBytes - usedBytes),
+            usedPercent: Math.min(100, (usedBytes / limitBytes) * 100),
+          }
+        : {}),
       updatedAt: new Date().toISOString(),
     };
   });
@@ -501,7 +512,7 @@ async function createFolder(accessToken: string, name: string, parentId: string)
       name,
       mimeType: FOLDER_MIME_TYPE,
       parents: [parentId],
-      appProperties: { soyplayManaged: "true" },
+      appProperties: { soydiaryManaged: "true" },
     }),
   });
   const payload = (await response.json().catch(() => ({}))) as { id?: string };
@@ -526,7 +537,7 @@ async function ensureFolderPath(
     .split("/")
     .map((part) => part.trim())
     .filter(Boolean);
-  if (parts[0] !== "soyplay") throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
+  if (parts[0] !== STORAGE_ROOT_FOLDER) throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
 
   let parentId = "root";
   let rootFolderId = "";
@@ -541,13 +552,13 @@ async function ensureFolderPath(
   return parentId;
 }
 
-function safeFileName(file: File) {
+function safeFileName(file: File, uploadKey: string) {
   const original =
     file.name
       .replace(/[\\/\0]/g, "-")
       .trim()
       .slice(0, 160) || "image";
-  return `${Date.now()}-${randomBytes(4).toString("hex")}-${original}`;
+  return `${uploadKey}-${original}`;
 }
 
 async function deleteDriveFile(accessToken: string, fileId: string) {
@@ -556,16 +567,46 @@ async function deleteDriveFile(accessToken: string, fileId: string) {
   }).catch(() => undefined);
 }
 
+async function findUploadedImage(
+  accessToken: string,
+  folderId: string,
+  uploadKey: string,
+) {
+  const params = new URLSearchParams({
+    q: `appProperties has { key='soydiaryUploadKey' and value='${escapeDriveQuery(uploadKey)}' } and '${escapeDriveQuery(folderId)}' in parents and trashed = false`,
+    spaces: "drive",
+    pageSize: "1",
+    fields: "files(id)",
+  });
+  const response = await driveFetch(accessToken, `${DRIVE_API}/files?${params}`);
+  const payload = (await response.json().catch(() => ({}))) as { files?: Array<{ id?: string }> };
+  if (!response.ok) throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
+  return payload.files?.[0]?.id;
+}
+
 async function uploadImage(
   accessToken: string,
   file: File,
   folderId: string,
+  uploadKey: string,
+  connectionId: string,
 ): Promise<{ secureUrl: string; publicId: string }> {
-  const boundary = `soyplay_${randomBytes(12).toString("hex")}`;
+  const existingFileId = await findUploadedImage(accessToken, folderId, uploadKey);
+  if (existingFileId) {
+    return {
+      secureUrl: googleDriveAssetPath(connectionId, existingFileId),
+      publicId: existingFileId,
+    };
+  }
+  const boundary = `soydiary_${randomBytes(12).toString("hex")}`;
   const metadata = {
-    name: safeFileName(file),
+    name: safeFileName(file, uploadKey),
     parents: [folderId],
-    appProperties: { soyplayManaged: "true", soyplayAssetType: "image" },
+    appProperties: {
+      soydiaryManaged: "true",
+      soydiaryAssetType: "image",
+      soydiaryUploadKey: uploadKey,
+    },
   };
   const body = Buffer.concat([
     Buffer.from(
@@ -588,22 +629,42 @@ async function uploadImage(
   };
   if (!response.ok || !uploaded.id) throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
 
-  const permissionResponse = await driveFetch(
-    accessToken,
-    `${DRIVE_API}/files/${encodeURIComponent(uploaded.id)}/permissions?fields=id`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "anyone", role: "reader" }),
-    },
-  );
-  if (!permissionResponse.ok) {
-    await deleteDriveFile(accessToken, uploaded.id);
-    throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
-  }
-
-  const secureUrl = googleDriveAssetPath(uploaded.id);
+  const secureUrl = googleDriveAssetPath(connectionId, uploaded.id);
   return { secureUrl, publicId: uploaded.id };
+}
+
+export async function downloadGoogleDriveImage(
+  userId: string,
+  connectionId: string,
+  fileId: string,
+) {
+  await ensureGoogleDriveStorageReady();
+  const otherConnections = await GoogleDriveConnectionModel.find({ userId })
+    .select({ _id: 1 })
+    .lean();
+  const candidates = [
+    connectionId,
+    ...otherConnections.map((connection) => String(connection._id)),
+  ].filter((value, index, values) => values.indexOf(value) === index);
+
+  for (const candidate of candidates) {
+    try {
+      const access = await getValidGoogleDriveAccessForConnection(userId, candidate);
+      const response = await withRefreshedAccess(userId, access, (accessToken) =>
+        driveFetch(
+          accessToken,
+          `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
+          { headers: { accept: "image/avif,image/webp,image/apng,image/*" } },
+        ),
+      );
+      if (response.ok) return response;
+      if (response.status !== 404) throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code !== "NOT_FOUND" && code !== "GOOGLE_DRIVE_RECONNECT_REQUIRED") throw error;
+    }
+  }
+  throw new Error("NOT_FOUND");
 }
 
 export async function uploadImagesToGoogleDrive(
@@ -629,9 +690,12 @@ export async function uploadImagesToGoogleDrive(
               return {
                 key,
                 ok: true as const,
-                ...(await uploadImage(accessToken, file, folderId)),
+                ...(await uploadImage(accessToken, file, folderId, key, access.connectionId)),
               };
             } catch (error) {
+              if (error instanceof Error && error.message === "GOOGLE_DRIVE_RECONNECT_REQUIRED") {
+                throw error;
+              }
               return {
                 key,
                 ok: false as const,

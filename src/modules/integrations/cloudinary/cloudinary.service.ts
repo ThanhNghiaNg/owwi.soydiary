@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { connectMongoose } from "@/lib/db/mongoose";
 import { env, isCloudinaryOAuthConfigured } from "@/lib/env";
 import { CloudinaryConnectionModel } from "@/models/CloudinaryConnection";
+import { STORAGE_ROOT_FOLDER } from "@/modules/integrations/storage/storage.constants";
 import { decryptCloudinaryToken, encryptCloudinaryToken } from "./token-crypto";
 
 const MCP_ORIGIN = "https://asset-management.mcp.cloudinary.com";
@@ -97,7 +98,7 @@ async function ensureCloudinaryConnectionStorageReady() {
           key.userId === 1 &&
           index.name
         ) {
-          // Older Soyplay versions allowed one Cloudinary connection per user via
+          // Older versions allowed one Cloudinary connection per user via
           // a unique userId index. Drop only that legacy index so multiple
           // connections can coexist without requiring a manual DB migration.
           await collection.dropIndex(index.name).catch((error: unknown) => {
@@ -124,15 +125,11 @@ async function ensureCloudinaryConnectionStorageReady() {
         { name: "cloudinary_user_recent" },
       );
     })().catch((error) => {
-      globalConnectionSetup.cloudinaryMultiConnectionSetup = undefined;
+      delete globalConnectionSetup.cloudinaryMultiConnectionSetup;
       throw error;
     });
   }
   await globalConnectionSetup.cloudinaryMultiConnectionSetup;
-}
-
-export function cloudinaryRedirectUri() {
-  return new URL("/api/integrations/cloudinary/callback", env.NEXT_PUBLIC_APP_URL).toString();
 }
 
 function parseScope(scope: CloudinaryTokenPayload["scope"]) {
@@ -158,7 +155,7 @@ function normalizeUploadPrefix(host: string) {
   }
 }
 
-async function registerMcpClient(): Promise<{ clientId: string }> {
+async function registerMcpClient(redirectUri: string): Promise<{ clientId: string }> {
   const response = await fetch(MCP_REGISTRATION_ENDPOINT, {
     method: "POST",
     headers: {
@@ -167,7 +164,7 @@ async function registerMcpClient(): Promise<{ clientId: string }> {
     },
     body: JSON.stringify({
       client_name: "Soy Diary",
-      redirect_uris: [cloudinaryRedirectUri()],
+      redirect_uris: [redirectUri],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -199,23 +196,24 @@ async function registerMcpClient(): Promise<{ clientId: string }> {
 export async function createCloudinaryAuthorizationAttempt(
   userId: string,
   state: string,
+  redirectUri: string,
 ): Promise<CloudinaryAuthorizationAttempt> {
   if (!isCloudinaryOAuthConfigured) throw new Error("CLOUDINARY_NOT_CONFIGURED");
 
   await ensureCloudinaryConnectionStorageReady();
-  const existing = await CloudinaryConnectionModel.findOne({ userId })
+  const existing = await CloudinaryConnectionModel.findOne({ userId, oauthRedirectUri: redirectUri })
     .sort({ updatedAt: -1 })
     .select({ oauthClientId: 1 })
     .lean();
   const registration = existing?.oauthClientId?.trim()
     ? { clientId: existing.oauthClientId.trim() }
-    : await registerMcpClient();
+    : await registerMcpClient(redirectUri);
   const codeVerifier = randomBytes(32).toString("base64url");
   const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
   const url = new URL(MCP_AUTHORIZATION_ENDPOINT);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", registration.clientId);
-  url.searchParams.set("redirect_uri", cloudinaryRedirectUri());
+  url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("state", state);
   url.searchParams.set("scope", MCP_SCOPES.join(" "));
   url.searchParams.set("code_challenge", codeChallenge);
@@ -361,12 +359,12 @@ function resultRecord(value: unknown): Record<string, unknown> | undefined {
 async function initializeMcp(accessToken: string): Promise<McpSession> {
   const initialized = await mcpRequest(accessToken, {
     jsonrpc: "2.0",
-    id: `soyplay-init-${randomBytes(6).toString("hex")}`,
+    id: `soydiary-init-${randomBytes(6).toString("hex")}`,
     method: "initialize",
     params: {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: "Soyplay", version: "1" },
+      clientInfo: { name: "Soy Diary", version: "1" },
     },
   });
 
@@ -376,7 +374,9 @@ async function initializeMcp(accessToken: string): Promise<McpSession> {
     typeof result.protocolVersion === "string" ? result.protocolVersion : MCP_PROTOCOL_VERSION;
   const session: McpSession = {
     protocolVersion,
-    sessionId: initialized.response.headers.get("mcp-session-id") ?? undefined,
+    ...(initialized.response.headers.get("mcp-session-id")
+      ? { sessionId: initialized.response.headers.get("mcp-session-id")! }
+      : {}),
   };
 
   await mcpRequest(
@@ -482,7 +482,7 @@ async function signUploads(accessToken: string, uploads: Array<Record<string, un
   const session = await initializeMcp(accessToken);
   const { payload } = await mcpRequest(accessToken, {
     jsonrpc: "2.0",
-    id: `soyplay-sign-${randomBytes(6).toString("hex")}`,
+    id: `soydiary-sign-${randomBytes(6).toString("hex")}`,
     method: "tools/call",
     params: {
       name: "sign-upload",
@@ -532,19 +532,20 @@ function findStorageUsage(value: unknown, depth = 0): CloudinaryStorageUsage | u
         (limitBytes && limitBytes > 0 ? (usedBytes / limitBytes) * 100 : undefined);
       return {
         usedBytes: Math.max(0, usedBytes),
-        limitBytes: limitBytes !== undefined && limitBytes > 0 ? limitBytes : undefined,
-        remainingBytes:
-          limitBytes !== undefined && limitBytes > 0
-            ? Math.max(0, limitBytes - usedBytes)
-            : undefined,
-        usedPercent:
-          usedPercent !== undefined ? Math.max(0, Math.min(100, usedPercent)) : undefined,
-        updatedAt:
-          typeof record.last_updated === "string"
-            ? record.last_updated
-            : typeof record.date_requested === "string"
-              ? record.date_requested
-              : undefined,
+        ...(limitBytes !== undefined && limitBytes > 0
+          ? {
+              limitBytes,
+              remainingBytes: Math.max(0, limitBytes - usedBytes),
+            }
+          : {}),
+        ...(usedPercent !== undefined
+          ? { usedPercent: Math.max(0, Math.min(100, usedPercent)) }
+          : {}),
+        ...(typeof record.last_updated === "string"
+          ? { updatedAt: record.last_updated }
+          : typeof record.date_requested === "string"
+            ? { updatedAt: record.date_requested }
+            : {}),
       };
     }
   }
@@ -569,7 +570,7 @@ async function fetchCloudinaryStorageUsage(accessToken: string) {
     accessToken,
     {
       jsonrpc: "2.0",
-      id: `soyplay-usage-${randomBytes(6).toString("hex")}`,
+      id: `soydiary-usage-${randomBytes(6).toString("hex")}`,
       method: "tools/call",
       params: {
         name: "get-usage-details",
@@ -611,12 +612,13 @@ export async function exchangeCloudinaryCode(
   code: string,
   clientId: string,
   codeVerifier: string,
+  redirectUri: string,
 ) {
   const payload = await tokenRequest(
     new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: cloudinaryRedirectUri(),
+      redirect_uri: redirectUri,
       code_verifier: codeVerifier,
     }),
     clientId,
@@ -626,10 +628,10 @@ export async function exchangeCloudinaryCode(
     throw new Error("CLOUDINARY_CONNECTION_INVALID");
   }
 
-  // sign-upload performs no upload. It gives Soyplay the product environment
+  // sign-upload performs no upload. It gives Soy Diary the product environment
   // selected by the user during MCP OAuth plus short-lived signed upload data.
   const [[probe], identity] = await Promise.all([
-    signUploads(payload.access_token, [{ folder: "soyplay" }]),
+    signUploads(payload.access_token, [{ folder: STORAGE_ROOT_FOLDER }]),
     getCloudinaryMcpIdentity(payload.access_token),
   ]);
   if (!probe) throw new Error("CLOUDINARY_CONNECTION_INVALID");
@@ -646,6 +648,7 @@ export async function exchangeCloudinaryCode(
     {
       $set: {
         oauthClientId: clientId,
+        oauthRedirectUri: redirectUri,
         cloudName: probe.cloudName,
         accountSubject: identity.sub?.trim() ?? "",
         accountEmail,
@@ -696,7 +699,7 @@ export async function listCloudinaryConnections(
     return {
       id: String(connection._id),
       label: accountLabel || cloudName,
-      accountLabel,
+      ...(accountLabel ? { accountLabel } : {}),
       resourceLabel: cloudName,
       active: connection.isActive === true,
       health: cloudinaryConnectionHealth(connection.refreshTokenExpiresAt),
@@ -945,13 +948,15 @@ async function uploadImageWithSignature(
 async function signChunk(
   userId: string,
   access: ValidAccess,
-  count: number,
+  keys: string[],
   folder: string,
 ): Promise<{ access: ValidAccess; credentials: SignedUploadCredential[] }> {
-  const uploads = Array.from({ length: count }, () => ({
+  const uploads = keys.map((key) => ({
     folder,
-    use_filename: true,
-    unique_filename: true,
+    public_id: key,
+    overwrite: true,
+    invalidate: true,
+    unique_filename: false,
   }));
   try {
     return { access, credentials: await signUploads(access.accessToken, uploads) };
@@ -977,7 +982,7 @@ export async function uploadImagesToCloudinary(
   for (let offset = 0; offset < entries.length; offset += concurrency) {
     const chunk = entries.slice(offset, offset + concurrency);
     try {
-      const signed = await signChunk(userId, access, chunk.length, folder);
+      const signed = await signChunk(userId, access, chunk.map(({ key }) => key), folder);
       access = signed.access;
       const chunkResults = await Promise.all(
         chunk.map(async ({ key, file }, index) => {

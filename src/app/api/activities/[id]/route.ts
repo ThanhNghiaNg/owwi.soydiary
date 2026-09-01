@@ -15,7 +15,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const current = await getActivityById(session.user.id, baby._id.toHexString(), id);
   if (!current) return NextResponse.json({ error: "Activity not found" }, { status: 404 });
-  const parsed = activityInputSchema.safeParse(await request.json());
+  const body: unknown = await request.json();
+  const withExistingImages = body && typeof body === "object" && !("images" in body)
+    ? { ...body, images: current.images ?? [] }
+    : body;
+  const parsed = activityInputSchema.safeParse(withExistingImages);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   if (parsed.data.type !== current.type) return NextResponse.json({ error: "Activity type cannot be changed" }, { status: 400 });
   if (parsed.data.type === "sleep" && new Date(parsed.data.endedAt) < new Date(parsed.data.occurredAt)) {

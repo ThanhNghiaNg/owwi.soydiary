@@ -36,5 +36,12 @@ export type StorageSettingsSummary = {
 };
 
 export type StorageUploadResult =
-  | { key: string; ok: true; secureUrl: string; publicId: string }
+  | {
+      key: string;
+      ok: true;
+      secureUrl: string;
+      publicId: string;
+      provider?: StorageProviderId;
+      connectionId?: string;
+    }
   | { key: string; ok: false; error: string };

@@ -4,6 +4,7 @@ const cloudinaryConnectionSchema = new Schema(
   {
     userId: { type: String, required: true },
     oauthClientId: { type: String, default: "", trim: true },
+    oauthRedirectUri: { type: String, default: "", trim: true },
     cloudName: { type: String, default: "", trim: true },
     accountSubject: { type: String, default: "", trim: true },
     accountEmail: { type: String, default: "", trim: true, lowercase: true },

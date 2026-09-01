@@ -32,10 +32,13 @@ export async function createActivity(ownerId: string, babyId: string, input: Act
   const doc = { ...input, _id: documentId, ownerId, babyId: new ObjectId(babyId), createdAt: now, updatedAt: now } as ActivityDocument;
   const col = await collection();
   if (clientMutationId) {
-    const { _id: _documentId, ...insertFields } = doc;
+    const { _id: _documentId, ownerId: _ownerId, babyId: _babyId, createdAt: _createdAt, ...updateFields } = doc;
     const saved = await col.findOneAndUpdate(
-      { _id: documentId },
-      { $setOnInsert: insertFields },
+      { _id: documentId, ownerId, babyId: new ObjectId(babyId) },
+      {
+        $set: updateFields,
+        $setOnInsert: { ownerId, babyId: new ObjectId(babyId), createdAt: now },
+      },
       { upsert: true, returnDocument: "after" },
     );
     if (!saved) throw new Error("Failed to create idempotent activity");

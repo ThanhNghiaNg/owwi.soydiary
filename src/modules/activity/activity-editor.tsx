@@ -3,14 +3,14 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
-import type { ActivityDto, ActivityInput, ActivityType } from "./activity.dto";
+import { activityInputSchema, type ActivityDto, type ActivityInput, type ActivityType } from "./activity.dto";
 import { getActivityMeta } from "./activity.registry";
 import { ActivityAsset } from "./activity-asset";
 import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon, TrashIcon } from "@/components/icons";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
 import { removeActivityCaches, upsertActivityCaches } from "@/lib/swr";
-import { ActivityImages, uploadPendingActivityImages, type PendingActivityImage } from "./activity-images";
+import { ActivityImageUploadError, ActivityImages, uploadPendingActivityImages, type PendingActivityImage } from "./activity-images";
 import {
   clearBreastfeedingTimer,
   breastfeedingTimerMutationId,
@@ -88,6 +88,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const [note, setNote] = useState(activity?.note ?? "");
   const [images, setImages] = useState<PendingActivityImage[]>(activity?.images ?? []);
   const uploadFolderKey = useRef(activity?.id ?? crypto.randomUUID());
+  const clientMutationId = useRef(crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -124,14 +125,33 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     setBusy(true);
     setError("");
     try {
+      const validated = activityInputSchema.safeParse({ ...payload, images: [] });
+      if (!validated.success) {
+        setError("Thông tin hoạt động chưa hợp lệ. Bạn kiểm tra lại các trường rồi lưu nhé.");
+        return;
+      }
+      if (
+        validated.data.type === "sleep" &&
+        new Date(validated.data.endedAt) < new Date(validated.data.occurredAt)
+      ) {
+        setError("Thời điểm thức dậy phải sau thời điểm bắt đầu ngủ.");
+        return;
+      }
       const currentElapsed = getBreastfeedingElapsed(timer, Date.now());
       const uploadedImages = await uploadPendingActivityImages(images, uploadFolderKey.current);
+      setImages(uploadedImages);
       const finalPayloadBase = { ...payload, images: uploadedImages };
       const finalPayload = type === "breastfeeding" && timer
         ? { ...finalPayloadBase, leftSeconds: currentElapsed.leftSeconds, rightSeconds: currentElapsed.rightSeconds }
         : finalPayloadBase;
-      const requestPayload = !activity && type === "breastfeeding" && timer
-        ? { ...finalPayload, clientMutationId: breastfeedingTimerMutationId(timer) }
+      const requestPayload = !activity
+        ? {
+            ...finalPayload,
+            clientMutationId:
+              type === "breastfeeding" && timer
+                ? breastfeedingTimerMutationId(timer)
+                : clientMutationId.current,
+          }
         : finalPayload;
       const response = await fetch(activity ? `/api/activities/${activity.id}` : "/api/activities", {
         method: activity ? "PATCH" : "POST",
@@ -154,8 +174,18 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         router.replace(returnHref);
         router.refresh();
       }
-    } catch {
-      setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
+    } catch (caught) {
+      if (caught instanceof ActivityImageUploadError) setImages(caught.images);
+      const code = caught instanceof Error ? caught.message : "";
+      if (code === "STORAGE_RECONNECT_REQUIRED") {
+        setError("Storage cần được kết nối lại. Mở menu tài khoản, kiểm tra storage rồi thử lưu lại.");
+      } else if (code === "IMAGE_PAYLOAD_TOO_LARGE") {
+        setError("Tổng dung lượng ảnh quá lớn. Hãy bớt ảnh hoặc chọn ảnh nhẹ hơn rồi thử lại.");
+      } else if (code.includes("STORAGE") || code.includes("UPLOAD")) {
+        setError("Chưa thể tải ảnh lên storage. Các ảnh chưa thành công vẫn được giữ để bạn thử lại.");
+      } else {
+        setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
+      }
     } finally {
       setBusy(false);
     }

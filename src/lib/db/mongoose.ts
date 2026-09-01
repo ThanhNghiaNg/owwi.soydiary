@@ -10,6 +10,7 @@ export async function connectMongoose(): Promise<typeof mongoose> {
   if (cache.connection) return cache.connection;
   if (!env.MONGODB_URI) throw new Error("MONGODB_URI is not configured.");
   cache.promise ??= mongoose.connect(env.MONGODB_URI, {
+    dbName: "babytrack",
     bufferCommands: false,
     maxPoolSize: 10,
     minPoolSize: 0,

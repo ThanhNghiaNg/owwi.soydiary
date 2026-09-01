@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireActor } from "@/lib/auth/current-user";
 import { apiError } from "@/lib/utils/http";
 import { uploadImagesToActiveStorage } from "@/modules/integrations/storage/storage.service";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_UPLOAD_FILES_PER_REQUEST,
+  STORAGE_ROOT_FOLDER,
+} from "@/modules/integrations/storage/storage.constants";
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -10,10 +15,9 @@ const ACCEPTED_IMAGE_TYPES = new Set([
   "image/gif",
   "image/avif",
 ]);
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_BATCH_BYTES = 80 * 1024 * 1024;
-const MAX_FILES = 40;
+const MAX_BATCH_BYTES = MAX_UPLOAD_FILES_PER_REQUEST * MAX_IMAGE_BYTES;
 const STORAGE_SCOPES = new Set(["activities"]);
+const UPLOAD_KEY_PATTERN = /^[A-Za-z0-9_-]{8,100}$/;
 
 function safeFolderKey(value: string) {
   const sanitized = value.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 80);
@@ -39,12 +43,19 @@ export async function POST(request: NextRequest) {
     let keys: string[];
     try {
       const parsed = JSON.parse(rawKeys);
-      keys = Array.isArray(parsed) && parsed.every((value) => typeof value === "string") ? parsed : [];
+      keys = Array.isArray(parsed) && parsed.every(
+        (value) => typeof value === "string" && UPLOAD_KEY_PATTERN.test(value),
+      ) ? parsed : [];
     } catch {
       keys = [];
     }
     const files = formData.getAll("files").filter((value): value is File => value instanceof File);
-    if (!files.length || files.length !== keys.length || files.length > MAX_FILES) {
+    if (
+      !files.length ||
+      files.length !== keys.length ||
+      files.length > MAX_UPLOAD_FILES_PER_REQUEST ||
+      new Set(keys).size !== keys.length
+    ) {
       return NextResponse.json({ error: "VALIDATION_ERROR" }, { status: 400 });
     }
 
@@ -57,7 +68,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const folder = `soydiary/${scope}/${safeFolderKey(rawFolderKey)}`;
+    const folder = `${STORAGE_ROOT_FOLDER}/${scope}/${safeFolderKey(rawFolderKey)}`;
     const results = await uploadImagesToActiveStorage(
       actor.id,
       files.map((file, index) => ({ key: keys[index]!, file })),

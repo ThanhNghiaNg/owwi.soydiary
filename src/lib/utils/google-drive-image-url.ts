@@ -1,21 +1,23 @@
 const GOOGLE_DRIVE_HOSTS = new Set(["drive.google.com", "drive.usercontent.google.com"]);
 const GOOGLE_DRIVE_FILE_ID_PATTERN = /^[A-Za-z0-9_-]{10,200}$/;
+const CONNECTION_ID_PATTERN = /^[a-f0-9]{24}$/i;
 const GOOGLE_DRIVE_ASSET_PREFIX = "/api/integrations/google-drive/assets/";
 
 export function isGoogleDriveFileId(value: string) {
   return GOOGLE_DRIVE_FILE_ID_PATTERN.test(value);
 }
 
-export function googleDriveAssetPath(fileId: string) {
+export function googleDriveAssetPath(connectionId: string, fileId: string) {
+  if (!CONNECTION_ID_PATTERN.test(connectionId)) throw new Error("INVALID_CONNECTION_ID");
   if (!isGoogleDriveFileId(fileId)) throw new Error("INVALID_GOOGLE_DRIVE_FILE_ID");
-  return `${GOOGLE_DRIVE_ASSET_PREFIX}${encodeURIComponent(fileId)}`;
+  return `${GOOGLE_DRIVE_ASSET_PREFIX}${encodeURIComponent(connectionId)}/${encodeURIComponent(fileId)}`;
 }
 
 export function isGoogleDriveAssetUrl(value: string) {
   const matchesPath = (pathname: string) => {
     if (!pathname.startsWith(GOOGLE_DRIVE_ASSET_PREFIX)) return false;
-    const fileId = pathname.slice(GOOGLE_DRIVE_ASSET_PREFIX.length);
-    return isGoogleDriveFileId(fileId);
+    const [connectionId, fileId, extra] = pathname.slice(GOOGLE_DRIVE_ASSET_PREFIX.length).split("/");
+    return !extra && Boolean(connectionId && fileId) && CONNECTION_ID_PATTERN.test(connectionId!) && isGoogleDriveFileId(fileId!);
   };
 
   if (value.startsWith("/")) return matchesPath(value);
@@ -60,6 +62,5 @@ export function resolveGoogleDriveImageUrl(value?: string) {
       return value;
     }
   }
-  const fileId = extractGoogleDriveFileId(value);
-  return fileId ? googleDriveAssetPath(fileId) : value;
+  return value;
 }

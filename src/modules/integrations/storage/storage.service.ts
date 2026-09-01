@@ -121,22 +121,32 @@ export async function getStorageSettings(userId: string): Promise<StorageSetting
 
   return {
     configured: providers.some((provider) => provider.configured),
-    activeConnection,
+    ...(activeConnection ? { activeConnection } : {}),
     providers,
   };
 }
 
 export async function activateStorageConnection(userId: string, storageId: string) {
   const { provider, connectionId, adapter } = parseStorageConnectionId(storageId);
-  // Each adapter owns its own consistency rules. Activate the target first, then
-  // deactivate every other provider so the storage layer has one global active
-  // destination even after Google Drive/S3 adapters are added later.
-  await adapter.activateConnection(userId, connectionId);
-  await Promise.all(
-    Object.values(providerAdapters)
-      .filter((candidate) => candidate.id !== provider)
-      .map((candidate) => candidate.deactivateAll(userId)),
-  );
+  const previous = (await listProviders(userId))
+    .flatMap((summary) => summary.connections)
+    .find((connection) => connection.active);
+  try {
+    // Clear other providers first so an interrupted switch never leaves two
+    // destinations active. Restore the previous selection if activation fails.
+    await Promise.all(
+      Object.values(providerAdapters)
+        .filter((candidate) => candidate.id !== provider)
+        .map((candidate) => candidate.deactivateAll(userId)),
+    );
+    await adapter.activateConnection(userId, connectionId);
+  } catch (error) {
+    if (previous && previous.id !== storageId) {
+      const fallback = parseStorageConnectionId(previous.id);
+      await fallback.adapter.activateConnection(userId, fallback.connectionId).catch(() => undefined);
+    }
+    throw error;
+  }
   return getStorageSettings(userId);
 }
 
@@ -194,12 +204,13 @@ export async function uploadImagesToActiveStorage(
 
   const adapter = providerAdapters[active.provider];
   if (!adapter?.configured()) throw new Error("STORAGE_NOT_CONFIGURED");
+  const { connectionId } = parseStorageConnectionId(active.id);
 
   try {
     const results = await adapter.uploadImages(userId, entries, folder);
-    return results.map((result) =>
-      result.ok ? result : { ...result, error: normalizeStorageError(new Error(result.error)) },
-    );
+    return results.map((result) => result.ok
+      ? { ...result, provider: active.provider, connectionId }
+      : { ...result, error: normalizeStorageError(new Error(result.error)) });
   } catch (error) {
     throw new Error(normalizeStorageError(error));
   }

@@ -197,8 +197,14 @@ export async function uploadImagesToActiveStorage(
   folder: string,
 ): Promise<StorageUploadResult[]> {
   const settings = await getStorageSettings(userId);
+  if (!settings.configured) {
+    throw new Error("STORAGE_NOT_CONFIGURED");
+  }
   const active = settings.activeConnection;
-  if (!active || active.health !== "connected") {
+  if (!active) {
+    throw new Error("STORAGE_CONNECTION_REQUIRED");
+  }
+  if (active.health !== "connected") {
     throw new Error("STORAGE_RECONNECT_REQUIRED");
   }
 

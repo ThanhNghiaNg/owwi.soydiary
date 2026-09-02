@@ -21,8 +21,17 @@ export const activityInputSchema = z.discriminatedUnion("type", [
   base.extend({ type: z.literal("sleep"), endedAt: z.string().datetime() }),
   base.extend({ type: z.literal("tummy"), durationMinutes: z.number().int().min(0).max(600), label: z.string().trim().min(1).max(60).default("Tummy Time") }),
   base.extend({ type: z.literal("solid"), label: z.string().trim().min(1).max(60).default("Solid Food") }),
+  base.extend({ type: z.literal("moment") }),
   base.extend({ type: z.literal("custom"), label: z.string().trim().min(1).max(60) }),
-]);
+]).superRefine((activity, context) => {
+  if (activity.type === "moment" && !activity.note.trim() && activity.images.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["note"],
+      message: "Khoảnh khắc cần có mô tả hoặc ít nhất một hình ảnh",
+    });
+  }
+});
 
 export type ActivityInput = z.infer<typeof activityInputSchema>;
 export type ActivityType = ActivityInput["type"];

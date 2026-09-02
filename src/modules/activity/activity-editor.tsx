@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { activityInputSchema, type ActivityDto, type ActivityInput, type ActivityType } from "./activity.dto";
@@ -11,6 +11,10 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
 import { removeActivityCaches, upsertActivityCaches } from "@/lib/swr";
 import { ActivityImageUploadError, ActivityImages, uploadPendingActivityImages, type PendingActivityImage } from "./activity-images";
+import {
+  openStorageManager,
+  type StorageManagerOpenReason,
+} from "@/modules/integrations/storage/storage-manager";
 import {
   clearBreastfeedingTimer,
   breastfeedingTimerMutationId,
@@ -49,6 +53,7 @@ function screenTitle(type: ActivityType) {
   if (type === "breastfeeding" || type === "bottle" || type === "pump") return "Ghi cữ ăn";
   if (type === "diaper") return "Ghi lần thay tã";
   if (type === "sleep") return "Ghi giấc ngủ";
+  if (type === "moment") return "Ghi khoảnh khắc";
   return "Ghi hoạt động";
 }
 
@@ -70,6 +75,7 @@ function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
   if (type === "solid") return { label: "Ăn dặm" };
   if (type === "custom") return { label: "Hoạt động khác" };
   if (type === "sleep") return { endDate: localDateInputValue(), endTime: localTimeInputValue() };
+  if (type === "moment") return {};
   return { leftSeconds: 0, rightSeconds: 0 };
 }
 
@@ -91,6 +97,8 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const clientMutationId = useRef(crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [storageIssue, setStorageIssue] = useState<Exclude<StorageManagerOpenReason, "manage">>();
+  const errorRef = useRef<HTMLDivElement>(null);
   const [saved, setSaved] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -102,7 +110,12 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const displayedNote = timer ? timer.note : note;
   const totalBreast = editing ? Number(fields.leftSeconds) + Number(fields.rightSeconds) : breastElapsed.totalSeconds;
   const payload = useMemo<ActivityInput | null>(() => {
-    const base = { type, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: timer?.note ?? note, images: images.map(({ url, storageKey }) => ({ url, storageKey })) } as const;
+    const base = {
+      type,
+      occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time),
+      note: timer?.note ?? note,
+      images: images.map(({ file: _file, ...image }) => image),
+    } as const;
     switch (type) {
       case "breastfeeding": return { ...base, type, leftSeconds: editing ? Number(fields.leftSeconds) : breastElapsed.leftSeconds, rightSeconds: editing ? Number(fields.rightSeconds) : breastElapsed.rightSeconds };
       case "bottle": return { ...base, type, milkType: String(fields.milkType) as "breast-milk" | "formula" | "other", amountMl: Number(fields.amountMl) };
@@ -111,6 +124,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       case "sleep": return { ...base, type, endedAt: combineLocalDateTime(String(fields.endDate), String(fields.endTime)) };
       case "tummy": return { ...base, type, durationMinutes: Number(fields.durationMinutes), label: String(fields.label) };
       case "solid": return { ...base, type, label: String(fields.label) };
+      case "moment": return { ...base, type };
       case "custom": return { ...base, type, label: String(fields.label) };
     }
   }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, images, note, time, timer?.note, timer?.occurredAt, type]);
@@ -120,12 +134,33 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     setSaved(false);
   }, []);
 
+  useEffect(() => {
+    if (!error) return;
+    const frame = window.requestAnimationFrame(() => {
+      const alert = errorRef.current;
+      if (!alert) return;
+      alert.focus({ preventScroll: true });
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      alert.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [error]);
+
   async function save() {
     if (!payload) return;
     setBusy(true);
     setError("");
+    setStorageIssue(undefined);
     try {
-      const validated = activityInputSchema.safeParse({ ...payload, images: [] });
+      if (type === "moment" && !payload.note.trim() && images.length === 0) {
+        setError("Hãy thêm mô tả hoặc ít nhất một hình ảnh cho khoảnh khắc này.");
+        return;
+      }
+      const validationImages = images.map((image, index) => {
+        const { file: _file, ...storedImage } = image;
+        return image.file ? { ...storedImage, url: `https://pending.invalid/${index}` } : storedImage;
+      });
+      const validated = activityInputSchema.safeParse({ ...payload, images: validationImages });
       if (!validated.success) {
         setError("Thông tin hoạt động chưa hợp lệ. Bạn kiểm tra lại các trường rồi lưu nhé.");
         return;
@@ -177,8 +212,15 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     } catch (caught) {
       if (caught instanceof ActivityImageUploadError) setImages(caught.images);
       const code = caught instanceof Error ? caught.message : "";
-      if (code === "STORAGE_RECONNECT_REQUIRED") {
-        setError("Storage cần được kết nối lại. Mở menu tài khoản, kiểm tra storage rồi thử lưu lại.");
+      if (code === "STORAGE_CONNECTION_REQUIRED") {
+        setStorageIssue("connection-required");
+        setError("Bạn chưa có nơi lưu ảnh. Hãy kết nối Cloudinary hoặc Google Drive, rồi quay lại bấm Lưu hoạt động.");
+      } else if (code === "STORAGE_RECONNECT_REQUIRED") {
+        setStorageIssue("reconnect-required");
+        setError("Nơi lưu ảnh hiện tại cần được kết nối lại. Hãy mở quản lý nơi lưu ảnh, kết nối lại hoặc chọn tài khoản khác, rồi bấm Lưu hoạt động.");
+      } else if (code === "STORAGE_NOT_CONFIGURED") {
+        setStorageIssue("connection-required");
+        setError("Chưa có dịch vụ lưu ảnh khả dụng trên máy chủ. Mở quản lý nơi lưu ảnh để xem trạng thái cấu hình.");
       } else if (code === "IMAGE_PAYLOAD_TOO_LARGE") {
         setError("Tổng dung lượng ảnh quá lớn. Hãy bớt ảnh hoặc chọn ảnh nhẹ hơn rồi thử lại.");
       } else if (code.includes("STORAGE") || code.includes("UPLOAD")) {
@@ -195,6 +237,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     if (!activity || deleting) return;
     setDeleting(true);
     setError("");
+    setStorageIssue(undefined);
     try {
       const response = await fetch(`/api/activities/${activity.id}`, { method: "DELETE" });
       if (!response.ok) {
@@ -268,7 +311,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         </div>
       </section>
 
-      <section className="surface-card min-w-0 max-w-full overflow-hidden p-5">
+      {type !== "moment" ? <section className="surface-card min-w-0 max-w-full overflow-hidden p-5">
         {type === "breastfeeding" ? editing
           ? <BreastEditFields fields={fields} setField={field} />
           : <BreastFields timer={timer} now={timerNow} draft={{ babyId, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: displayedNote }} />
@@ -279,16 +322,33 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         {type === "sleep" ? <SleepFields fields={fields} setField={field} /> : null}
         {type === "tummy" ? <TummyFields fields={fields} setField={field} /> : null}
         {type === "solid" || type === "custom" ? <LabelField fields={fields} setField={field} placeholder={meta.label} /> : null}
-      </section>
+      </section> : null}
 
       <label className="surface-card block p-5">
-        <span className="mb-2 block text-sm font-extrabold">Ghi chú <span className="font-medium text-[var(--color-muted)]">(không bắt buộc)</span></span>
-        <textarea value={displayedNote} onChange={(event) => changeNote(event.target.value)} className="field-control h-24 resize-none" placeholder="Ví dụ: Bé ăn ngon, ngủ sâu…" />
+        <span className="mb-2 block text-sm font-extrabold">
+          {type === "moment" ? "Mô tả" : "Ghi chú"}{" "}
+          <span className="font-medium text-[var(--color-muted)]">{type === "moment" ? "(hoặc thêm hình ảnh)" : "(không bắt buộc)"}</span>
+        </span>
+        <textarea
+          value={displayedNote}
+          onChange={(event) => changeNote(event.target.value)}
+          className="field-control h-24 resize-none"
+          placeholder={type === "moment" ? "Điều đáng nhớ về khoảnh khắc này…" : "Ví dụ: Bé ăn ngon, ngủ sâu…"}
+        />
       </label>
 
       <ActivityImages images={images} disabled={busy} onChange={(next) => { setImages(next); setSaved(false); }} />
 
-      {error ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">{error}</p> : null}
+      {error ? <div ref={errorRef} role="alert" tabIndex={-1} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">
+        <p className="leading-6">{error}</p>
+        {storageIssue ? <button
+          type="button"
+          onClick={(event) => openStorageManager({ reason: storageIssue, returnFocus: event.currentTarget })}
+          className="mt-3 min-h-12 w-full rounded-xl bg-[var(--color-primary)] px-4 font-extrabold text-white transition-colors hover:bg-[var(--color-primary-strong)] active:bg-[#452b8a]"
+        >
+          {storageIssue === "reconnect-required" ? "Mở và kết nối lại" : "Mở nơi lưu ảnh"}
+        </button> : null}
+      </div> : null}
       {saved ? <p role="status" className="rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-center text-sm font-extrabold text-[var(--color-accent)]">Đã lưu thay đổi</p> : null}
       {editing ? <button type="button" onClick={() => setDeleteOpen(true)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 text-sm font-extrabold text-[var(--color-danger)] transition-colors hover:bg-red-50 active:bg-red-100">
         <TrashIcon className="h-5 w-5" /> Xóa hoạt động

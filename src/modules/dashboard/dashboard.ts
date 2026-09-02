@@ -3,7 +3,7 @@ import type { ActivityDto } from "@/modules/activity/activity.dto";
 export type DashboardPreset = "today" | "yesterday" | "7-days" | "14-days" | "30-days" | "90-days";
 export type ChartVariant = "bar" | "line" | "area";
 export type ChartGranularity = "hourly" | "daily" | "weekly";
-export type DashboardMetricKey = "breastfeedingMinutes" | "diapers" | "pumpMl" | "bottleMl" | "sleepHours" | "tummyMinutes" | "solidCount" | "customCount";
+export type DashboardMetricKey = "breastfeedingMinutes" | "diapers" | "pumpMl" | "bottleMl" | "sleepHours" | "tummyMinutes" | "solidCount" | "momentCount" | "customCount";
 
 export type TimePoint = {
   label: string;
@@ -57,6 +57,7 @@ const metricKeys: DashboardMetricKey[] = [
   "sleepHours",
   "tummyMinutes",
   "solidCount",
+  "momentCount",
   "customCount",
 ];
 
@@ -214,6 +215,7 @@ function contribution(activity: ActivityDto): [DashboardMetricKey, number] {
   if (activity.type === "sleep") return ["sleepHours", Math.max(0, new Date(activity.endedAt).getTime() - new Date(activity.occurredAt).getTime()) / 3_600_000];
   if (activity.type === "tummy") return ["tummyMinutes", activity.durationMinutes];
   if (activity.type === "solid") return ["solidCount", 1];
+  if (activity.type === "moment") return ["momentCount", 1];
   return ["customCount", 1];
 }
 

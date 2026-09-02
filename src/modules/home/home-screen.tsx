@@ -1,14 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { ACTIVITY_REGISTRY, getActivityMeta } from "@/modules/activity/activity.registry";
+import { getActivityMeta } from "@/modules/activity/activity.registry";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
+import { ActivityImageGallery } from "@/modules/activity/activity-image-preview";
+import type { ActivityType } from "@/modules/activity/activity.dto";
 import { babyAgeSentence, babyAgeText, formatClock, relativeFromNow } from "@/lib/date";
 import { ArrowUpRightIcon, CheckIcon } from "@/components/icons";
 import { useHomeData } from "./use-home-data";
 import { activityDetail } from "@/modules/activity/activity-format";
 import { ProfileMenu } from "@/components/profile-menu";
 import { useInitialAppData } from "@/components/data-cache-provider";
+
+const homeQuickActivityOrder = [
+  "breastfeeding", "bottle", "diaper", "moment", "pump", "solid", "tummy", "custom",
+] as const satisfies readonly ActivityType[];
+const homeQuickActivities = homeQuickActivityOrder.map(getActivityMeta);
 
 export function HomeScreen() {
   const { baby: initialBaby, account } = useInitialAppData();
@@ -41,7 +48,7 @@ export function HomeScreen() {
           </div>
         </div>
         <div className="grid grid-cols-4 gap-x-2 gap-y-4 sm:gap-x-4">
-          {ACTIVITY_REGISTRY.map((item) => (
+          {homeQuickActivities.map((item) => (
             <Link key={item.type} href={`/app/track/${item.type}`} aria-label={`Ghi hoạt động ${item.label}`} className="group min-w-0 text-center">
               <span className="mx-auto grid aspect-square w-full max-w-[92px] place-items-center overflow-hidden rounded-[1.35rem] border border-[var(--color-border)] bg-white shadow-[0_5px_16px_rgba(58,43,76,0.06)] transition duration-200 group-hover:-translate-y-0.5 group-hover:border-[var(--color-primary)] group-active:translate-y-0 group-active:opacity-80">
                 <ActivityAsset type={item.type} size={72} className="h-[76%] w-[76%]" />
@@ -69,8 +76,8 @@ export function HomeScreen() {
         <div className="space-y-3">
           {activities.slice(0, 3).map((activity) => {
             const meta = getActivityMeta(activity.type);
-            return <Link key={activity.id} href={`/app/activity/${activity.id}?from=home`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group block rounded-[1.5rem]">
-            <article className="surface-card flex items-center gap-3 overflow-hidden p-3.5 transition duration-200 group-hover:border-[var(--color-primary)] group-active:bg-[var(--color-primary-soft)]">
+            return <article key={activity.id} className="surface-card overflow-hidden transition duration-200 hover:border-[var(--color-primary)] focus-within:border-[var(--color-primary)]">
+            <Link href={`/app/activity/${activity.id}?from=home`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group flex items-center gap-3 p-3.5 transition-colors active:bg-[var(--color-primary-soft)]">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl" style={{ backgroundColor: `${meta.accent}18` }}>
                 <ActivityAsset type={activity.type} size={42} className="h-10 w-10" />
               </div>
@@ -84,7 +91,14 @@ export function HomeScreen() {
                   <span className="truncate text-[var(--color-muted)]">{activityDetail(activity)}</span>
                 </div>
               </div>
-            </article></Link>;
+            </Link>
+            {activity.images.length ? <ActivityImageGallery
+              images={activity.images}
+              label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`}
+              maxThumbnails={1}
+              className="border-t border-[var(--color-border)] px-3.5 py-3"
+            /> : null}
+            </article>;
           })}
 
           {activities.length === 0 ? <div className="surface-card px-6 py-8 text-center">

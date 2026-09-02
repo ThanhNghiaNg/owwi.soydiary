@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import { ConfirmDialog } from "./confirm-dialog";
 import { CloudIcon, LogOutIcon, ProfileIcon } from "./icons";
-import { StorageManager } from "@/modules/integrations/storage/storage-manager";
+import { openStorageManager } from "@/modules/integrations/storage/storage-manager";
 
 type ProfileMenuProps = {
   accountName: string | null | undefined;
@@ -14,12 +14,12 @@ type ProfileMenuProps = {
 export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
-  const [storageOpen, setStorageOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
   const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const storageOptionRef = useRef<HTMLButtonElement>(null);
   const logoutOptionRef = useRef<HTMLButtonElement>(null);
 
   const closeLogoutDialog = useCallback(() => {
@@ -31,7 +31,7 @@ export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
 
   useEffect(() => {
     if (!menuOpen) return;
-    const focusFrame = window.requestAnimationFrame(() => logoutOptionRef.current?.focus());
+    const focusFrame = window.requestAnimationFrame(() => storageOptionRef.current?.focus());
 
     function handlePointerDown(event: PointerEvent) {
       const target = event.target as Node;
@@ -58,6 +58,11 @@ export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
     setMenuOpen(false);
     setError("");
     setLogoutDialogOpen(true);
+  }
+
+  function openStorageSettings() {
+    setMenuOpen(false);
+    openStorageManager({ reason: "manage", returnFocus: triggerRef.current });
   }
 
   async function logout() {
@@ -113,8 +118,8 @@ export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
         </span>
       </div>
       <div role="separator" className="my-1 border-t border-[var(--color-border)]" />
-      <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setStorageOpen(true); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-extrabold transition-colors hover:bg-[var(--color-primary-soft)]">
-        <CloudIcon className="h-5 w-5 shrink-0" /> Quản lý storage
+      <button ref={storageOptionRef} type="button" role="menuitem" onClick={openStorageSettings} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-extrabold transition-colors hover:bg-[var(--color-primary-soft)] active:bg-[#e3daf6]">
+        <CloudIcon className="h-5 w-5 shrink-0" /> Nơi lưu ảnh
       </button>
       <button
         ref={logoutOptionRef}
@@ -141,6 +146,5 @@ export function ProfileMenu({ accountName, accountEmail }: ProfileMenuProps) {
       onConfirm={() => { void logout(); }}
       onClose={closeLogoutDialog}
     />
-    <StorageManager open={storageOpen} onClose={() => setStorageOpen(false)} />
   </div>;
 }

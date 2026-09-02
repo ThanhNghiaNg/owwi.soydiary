@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { CalendarIcon, ChevronDown, ChevronLeft, XIcon } from "@/components/icons";
 import { formatClock } from "@/lib/date";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
+import { ActivityImageGallery } from "@/modules/activity/activity-image-preview";
 import { activityDetail, formatActivityDuration } from "@/modules/activity/activity-format";
 import type { ActivityDto, ActivityType } from "@/modules/activity/activity.dto";
 import { ACTIVITY_REGISTRY, getActivityMeta } from "@/modules/activity/activity.registry";
@@ -20,7 +21,7 @@ import {
 import { type ActivitiesResponse } from "@/lib/swr";
 
 type HistoryTab = "timeline" | "summary";
-const quickActivityOrder: ActivityType[] = ["breastfeeding", "diaper", "pump", "bottle", "sleep", "tummy", "solid", "custom"];
+const quickActivityOrder: ActivityType[] = ["breastfeeding", "diaper", "pump", "bottle", "moment", "sleep", "tummy", "solid", "custom"];
 const quickActivities = quickActivityOrder.map((type) => ACTIVITY_REGISTRY.find((item) => item.type === type)!);
 const emptyActivities: ActivityDto[] = [];
 
@@ -119,8 +120,8 @@ function Timeline({ groups, hasMore, onLoadMore }: { groups: ReturnType<typeof g
       <div className="space-y-3">
         {group.activities.map((activity) => {
           const meta = getActivityMeta(activity.type);
-          return <Link key={activity.id} href={`/app/activity/${activity.id}?from=history`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group block rounded-[1.5rem]">
-          <article className="surface-card relative flex min-h-[92px] overflow-hidden transition duration-200 group-hover:border-[var(--color-primary)] group-active:bg-[var(--color-primary-soft)]">
+          return <article key={activity.id} className="surface-card relative overflow-hidden transition duration-200 hover:border-[var(--color-primary)] focus-within:border-[var(--color-primary)]">
+          <Link href={`/app/activity/${activity.id}?from=history`} aria-label={`Xem và sửa ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="group flex min-h-[92px] transition-colors active:bg-[var(--color-primary-soft)]">
             <span className="w-1.5 shrink-0" style={{ backgroundColor: meta.accent }} aria-hidden="true" />
             <div className="grid w-[76px] shrink-0 place-items-center" style={{ backgroundColor: `${meta.accent}12` }}>
               <ActivityAsset type={activity.type} size={52} className="h-12 w-12" />
@@ -136,7 +137,14 @@ function Timeline({ groups, hasMore, onLoadMore }: { groups: ReturnType<typeof g
               {activityBreakdown(activity) ? <p className="mt-2 text-xs font-semibold leading-5 text-[var(--color-muted)]">{activityBreakdown(activity)}</p> : null}
               {activity.note ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--color-muted)]">{activity.note}</p> : null}
             </div>
-          </article></Link>;
+          </Link>
+          {activity.images.length ? <ActivityImageGallery
+            images={activity.images}
+            label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`}
+            maxThumbnails={1}
+            className="border-t border-[var(--color-border)] px-4 py-3"
+          /> : null}
+          </article>;
         })}
       </div>
     </section>)}

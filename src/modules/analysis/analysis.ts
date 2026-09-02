@@ -13,6 +13,7 @@ type DailyAnalysis = {
   diaperChanges: number;
   tummyMinutes: number;
   solidMeals: number;
+  moments: number;
   otherActivities: number;
 };
 
@@ -88,6 +89,7 @@ export function buildAnalysisDigest(activities: ActivityDto[], timeZone: string,
     diaperChanges: 0,
     tummyMinutes: 0,
     solidMeals: 0,
+    moments: 0,
     otherActivities: 0,
   }]));
 
@@ -114,6 +116,7 @@ export function buildAnalysisDigest(activities: ActivityDto[], timeZone: string,
     if (activity.type === "diaper") bucket.diaperChanges += 1;
     if (activity.type === "tummy") bucket.tummyMinutes += activity.durationMinutes;
     if (activity.type === "solid") bucket.solidMeals += 1;
+    if (activity.type === "moment") bucket.moments += 1;
     if (activity.type === "custom") bucket.otherActivities += 1;
   }
 

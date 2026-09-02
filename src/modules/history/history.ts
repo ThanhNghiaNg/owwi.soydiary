@@ -107,6 +107,7 @@ export function buildHistorySummary(activities: ActivityDto[], range: HistoryRan
   const sleeps = activities.filter((item): item is Extract<ActivityDto, { type: "sleep" }> => item.type === "sleep");
   const tummy = activities.filter((item): item is Extract<ActivityDto, { type: "tummy" }> => item.type === "tummy");
   const solid = activities.filter((item): item is Extract<ActivityDto, { type: "solid" }> => item.type === "solid");
+  const moments = activities.filter((item): item is Extract<ActivityDto, { type: "moment" }> => item.type === "moment");
   const custom = activities.filter((item): item is Extract<ActivityDto, { type: "custom" }> => item.type === "custom");
   const breastSeconds = breast.reduce((sum, item) => sum + item.leftSeconds + item.rightSeconds, 0);
   const pumpMl = pumps.reduce((sum, item) => sum + item.leftMl + item.rightMl, 0);
@@ -169,6 +170,11 @@ export function buildHistorySummary(activities: ActivityDto[], range: HistoryRan
   ] });
   if (solid.length) sections.push({ key: "solid", title: "Ăn dặm", accent: getActivityMeta("solid").accent, rows: [
     { label: "Bữa gần nhất", value: lastTime(solid) }, { label: "Tổng số bữa", value: countText(solid.length, days) },
+  ] });
+  if (moments.length) sections.push({ key: "moment", title: "Khoảnh khắc", accent: getActivityMeta("moment").accent, rows: [
+    { label: "Khoảnh khắc gần nhất", value: lastTime(moments) },
+    { label: "Tổng số khoảnh khắc", value: countText(moments.length, days) },
+    { label: "Tổng số hình ảnh", value: String(moments.reduce((total, item) => total + item.images.length, 0)), divider: true },
   ] });
   if (custom.length) sections.push({ key: "custom", title: "Hoạt động khác", accent: getActivityMeta("custom").accent, rows: [
     { label: "Lần gần nhất", value: lastTime(custom) }, { label: "Tổng số lần", value: countText(custom.length, days) },

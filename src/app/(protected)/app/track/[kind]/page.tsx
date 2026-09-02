@@ -3,7 +3,7 @@ import type { ActivityType } from "@/modules/activity/activity.dto";
 import { ActivityEditor } from "@/modules/activity/activity-editor";
 import { auth } from "@/auth";
 import { getBabyByOwner } from "@/modules/baby/baby.repository";
-const kinds = new Set<ActivityType>(["breastfeeding","bottle","pump","diaper","sleep","tummy","solid","custom"]);
+const kinds = new Set<ActivityType>(["breastfeeding","bottle","pump","diaper","sleep","tummy","solid","moment","custom"]);
 export default async function TrackPage({ params, searchParams }: { params: Promise<{ kind: string }>; searchParams: Promise<{ from?: string }> }) {
   const { kind } = await params;
   const { from } = await searchParams;

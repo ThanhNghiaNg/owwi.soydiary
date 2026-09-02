@@ -5,7 +5,7 @@ import { activityInputSchema, type ActivityType } from "@/modules/activity/activ
 import { createActivity, listActivities } from "@/modules/activity/activity.repository";
 import { toActivityDto } from "@/modules/activity/activity.mapper";
 
-const allowedTypes = new Set<ActivityType>(["breastfeeding","bottle","pump","diaper","sleep","tummy","solid","custom"]);
+const allowedTypes = new Set<ActivityType>(["breastfeeding","bottle","pump","diaper","sleep","tummy","solid","moment","custom"]);
 const privateNoStore = { "Cache-Control": "private, no-store" };
 
 export async function GET(request: NextRequest) {

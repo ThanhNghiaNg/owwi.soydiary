@@ -29,5 +29,12 @@ export function activityDetail(activity: ActivityDto) {
     case "solid":
     case "custom":
       return activity.label;
+    case "moment": {
+      const details = [
+        activity.note.trim() ? "Có mô tả" : "",
+        activity.images.length ? `${activity.images.length} ảnh` : "",
+      ].filter(Boolean);
+      return details.join(" · ") || "Khoảnh khắc";
+    }
   }
 }

@@ -32,6 +32,7 @@ const cardConfigs: ReadonlyArray<{
   { key: "sleepHours", activityType: "sleep", title: "Giấc ngủ", unit: "giờ" },
   { key: "tummyMinutes", activityType: "tummy", title: "Nằm sấp", unit: "phút" },
   { key: "solidCount", activityType: "solid", title: "Ăn dặm", unit: "bữa" },
+  { key: "momentCount", activityType: "moment", title: "Khoảnh khắc", unit: "lần" },
   { key: "customCount", activityType: "custom", title: "Hoạt động khác", unit: "lần" },
 ];
 

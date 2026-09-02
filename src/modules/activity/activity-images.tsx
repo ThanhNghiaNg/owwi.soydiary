@@ -8,6 +8,7 @@ import {
   MAX_IMAGE_BYTES,
   MAX_UPLOAD_FILES_PER_REQUEST,
 } from "@/modules/integrations/storage/storage.constants";
+import { ActivityImagePreview } from "./activity-image-preview";
 
 export type ActivityImage = ActivityInput["images"][number];
 export type PendingActivityImage = ActivityImage & { file?: File };
@@ -74,6 +75,7 @@ export function ActivityImages({ images, onChange, disabled }: {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const objectUrlsRef = useRef(new Set<string>());
 
   useEffect(() => () => {
@@ -124,12 +126,14 @@ export function ActivityImages({ images, onChange, disabled }: {
     </div>
     {images.length ? <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
       {images.map((image, index) => <div key={image.storageKey} className="relative aspect-square overflow-hidden rounded-2xl bg-[#f2eff5]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={image.url} alt={`Ảnh hoạt động ${index + 1}`} className="h-full w-full object-cover" loading="lazy" />
+        <button type="button" onClick={() => setPreviewIndex(index)} aria-label={`Xem ảnh hoạt động ${index + 1} trên ${images.length}`} className="group/image block h-full w-full touch-manipulation focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--color-primary)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={image.url} alt={`Ảnh ${index + 1} của hoạt động`} className="h-full w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.03] motion-reduce:transition-none" loading="lazy" />
+        </button>
         <button type="button" onClick={() => remove(index)} disabled={disabled} aria-label={`Xóa ảnh ${index + 1}`} className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded-xl bg-black/65 text-white backdrop-blur-sm disabled:opacity-50">
           <TrashIcon className="h-5 w-5" />
         </button>
-        {image.file ? <span className="absolute bottom-1 left-1 rounded-lg bg-white/90 px-2 py-1 text-[10px] font-extrabold text-[var(--color-primary-strong)]">Chờ lưu</span> : null}
+        {image.file ? <span className="pointer-events-none absolute bottom-1 left-1 rounded-lg bg-white/90 px-2 py-1 text-[10px] font-extrabold text-[var(--color-primary-strong)]">Chờ lưu</span> : null}
       </div>)}
     </div> : <div className="mt-4 rounded-2xl border border-dashed border-[var(--color-border)] bg-[#faf9fb] px-4 py-6 text-center text-sm text-[var(--color-muted)]">Chưa có hình ảnh</div>}
     <input ref={inputRef} id={inputId} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple className="sr-only" onChange={(event) => addFiles(event.target.files)} />
@@ -137,5 +141,11 @@ export function ActivityImages({ images, onChange, disabled }: {
       Thêm hình ảnh
     </button>
     {error ? <p role="alert" className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p> : null}
+    {previewIndex !== null ? <ActivityImagePreview
+      images={images}
+      index={previewIndex}
+      onIndexChange={setPreviewIndex}
+      onClose={() => setPreviewIndex(null)}
+    /> : null}
   </section>;
 }

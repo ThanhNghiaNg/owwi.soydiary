@@ -9,8 +9,8 @@ const collection = async () => (await db()).collection<ActivityDocument>("activi
 export async function ensureActivityIndexes() {
   const col = await collection();
   await Promise.all([
-    col.createIndex({ ownerId: 1, babyId: 1, occurredAt: -1 }),
-    col.createIndex({ ownerId: 1, babyId: 1, type: 1, occurredAt: -1 }),
+    col.createIndex({ ownerId: 1, babyId: 1, occurredAt: -1, _id: -1 }),
+    col.createIndex({ ownerId: 1, babyId: 1, type: 1, occurredAt: -1, _id: -1 }),
   ]);
 }
 

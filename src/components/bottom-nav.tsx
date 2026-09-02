@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import { ChartIcon, HomeIcon, SparkIcon } from "./icons";
+import { ChartIcon, GalleryIcon, HomeIcon, SparkIcon } from "./icons";
 import { APP_TAB_EVENT } from "./top-tab-panels";
 const tabs = [
   { href: "/app", label: "Hôm nay", Icon: HomeIcon },
   { href: "/app/dashboard", label: "Thống kê", Icon: ChartIcon },
   { href: "/app/ai", label: "Phân tích", Icon: SparkIcon },
+  { href: "/app/gallery", label: "Bộ sưu tập", Icon: GalleryIcon },
 ] as const;
 export function BottomNav() {
   const pathname = usePathname();
@@ -33,8 +34,8 @@ export function BottomNav() {
           window.dispatchEvent(new CustomEvent(APP_TAB_EVENT, { detail: href }));
           if (href !== pathname) window.history.pushState(null, "", href);
         }}
-        className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs font-bold transition-colors duration-200 ${active ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "text-[var(--color-muted)] hover:bg-zinc-50"}`}
-      ><Icon className="h-6 w-6"/><span>{label}</span></Link>;
+        className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs font-bold transition-colors duration-200 ${active ? "bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" : "text-[var(--color-muted)] hover:bg-zinc-50 active:bg-[var(--color-primary-soft)]"}`}
+      ><span aria-hidden="true"><Icon className="h-6 w-6"/></span><span>{label}</span></Link>;
     })}
   </nav>;
 }

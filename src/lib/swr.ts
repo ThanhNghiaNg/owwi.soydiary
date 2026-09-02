@@ -5,6 +5,7 @@ export const BABY_KEY = "/api/baby";
 export const ACTIVITIES_KEY = "/api/activities";
 export const ANALYSIS_KEY = "/api/analysis";
 export const DATA_SYNC_CHANNEL = "babys-diary:data-sync";
+export const GALLERY_REFRESH_EVENT = "soydiary:gallery-refresh";
 export type DataResource = "activities" | "baby" | "analysis";
 
 export type BabyResponse<T> = { baby: T | null };
@@ -61,7 +62,9 @@ function isResourceKey(resource: DataResource, key: unknown) {
 }
 
 export function broadcastDataChange(resource: DataResource) {
-  if (typeof window === "undefined" || !("BroadcastChannel" in window)) return;
+  if (typeof window === "undefined") return;
+  if (resource === "activities") window.dispatchEvent(new Event(GALLERY_REFRESH_EVENT));
+  if (!("BroadcastChannel" in window)) return;
   const channel = new BroadcastChannel(DATA_SYNC_CHANNEL);
   channel.postMessage({ resource });
   channel.close();

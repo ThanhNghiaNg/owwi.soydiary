@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { SWRConfig, useSWRConfig } from "swr";
-import { ACTIVITIES_KEY, BABY_KEY, DATA_SYNC_CHANNEL, fetchJson, revalidateResourceCaches, type DataResource } from "@/lib/swr";
+import { ACTIVITIES_KEY, BABY_KEY, DATA_SYNC_CHANNEL, GALLERY_REFRESH_EVENT, fetchJson, revalidateResourceCaches, type DataResource } from "@/lib/swr";
 import type { BabyDto } from "@/modules/baby/baby.dto";
 import type { ActivityDto } from "@/modules/activity/activity.dto";
 
@@ -53,6 +53,7 @@ function CacheSyncListener() {
     channel.addEventListener("message", (event: MessageEvent<{ resource?: DataResource }>) => {
       const resource = event.data?.resource;
       if (resource === "activities" || resource === "baby" || resource === "analysis") {
+        if (resource === "activities") window.dispatchEvent(new Event(GALLERY_REFRESH_EVENT));
         void revalidateResourceCaches(cache, mutate, resource);
       }
     });

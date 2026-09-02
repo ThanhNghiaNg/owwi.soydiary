@@ -15,6 +15,6 @@ export default async function ActivityDetailPage({ params, searchParams }: { par
   if (!activity) notFound();
   const dto = toActivityDto(activity);
   const { from } = await searchParams;
-  const returnHref = from === "history" ? "/app/history" : "/app";
+  const returnHref = from === "history" ? "/app/history" : from === "gallery" ? "/app/gallery" : "/app";
   return <ActivityEditor type={dto.type} babyId={baby._id.toHexString()} activity={dto} returnHref={returnHref} />;
 }

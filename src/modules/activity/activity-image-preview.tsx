@@ -2,11 +2,17 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, XIcon } from "@/components/icons";
+import Link from "next/link";
+import { ArrowUpRightIcon, ChevronLeft, ChevronRight, XIcon } from "@/components/icons";
 
 export type PreviewableActivityImage = {
   url: string;
   storageKey: string;
+  alt?: string;
+  title?: string;
+  meta?: string;
+  description?: string;
+  activityHref?: string;
 };
 
 type ActivityImagePreviewProps = {
@@ -23,6 +29,7 @@ type ActivityImagePreviewProps = {
 export function ActivityImagePreview({ images, index, onIndexChange, onClose }: ActivityImagePreviewProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const captionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -96,6 +103,7 @@ export function ActivityImagePreview({ images, index, onIndexChange, onClose }: 
 
   const hasMultiple = images.length > 1;
   const positionLabel = `Ảnh ${safeIndex + 1} trên ${images.length}`;
+  const hasDetails = Boolean(image.description?.trim() || image.activityHref);
 
   return createPortal(<div
     className="fixed inset-0 z-[80] flex min-h-dvh items-center justify-center bg-[#17121d]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm"
@@ -106,13 +114,15 @@ export function ActivityImagePreview({ images, index, onIndexChange, onClose }: 
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      aria-describedby={descriptionId}
+      aria-describedby={hasDetails ? `${descriptionId} ${captionId}` : descriptionId}
       className="flex h-full max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl min-w-0 flex-col overflow-hidden rounded-[1.5rem] border border-white/15 bg-[#211a2b] shadow-2xl"
     >
       <div className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 sm:px-4">
         <div className="min-w-0 px-1 text-white">
-          <h2 id={titleId} className="truncate text-base font-extrabold">Xem hình ảnh hoạt động</h2>
-          <p id={descriptionId} aria-live="polite" className="mt-0.5 text-xs font-semibold text-white/70">{positionLabel}</p>
+          <h2 id={titleId} className="truncate text-base font-extrabold">{image.title ?? "Xem hình ảnh hoạt động"}</h2>
+          <p id={descriptionId} aria-live="polite" className="mt-0.5 truncate text-xs font-semibold text-white/70">
+            {positionLabel}{image.meta ? ` · ${image.meta}` : ""}
+          </p>
         </div>
         <button
           ref={closeRef}
@@ -134,7 +144,7 @@ export function ActivityImagePreview({ images, index, onIndexChange, onClose }: 
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={image.url}
-            alt={`${positionLabel} của hoạt động`}
+            alt={image.alt ?? `${positionLabel} của hoạt động`}
             className="max-h-full max-w-full select-none object-contain"
           />
           <figcaption className="sr-only">{positionLabel} của hoạt động nhật ký</figcaption>
@@ -159,6 +169,22 @@ export function ActivityImagePreview({ images, index, onIndexChange, onClose }: 
           </button>
         </> : null}
       </div>
+
+      {hasDetails ? <div id={captionId} className="safe-bottom flex max-h-[32dvh] shrink-0 items-start gap-4 overflow-y-auto border-t border-white/10 bg-[#211a2b] px-4 py-3 text-white sm:px-5">
+        <div className="min-w-0 flex-1">
+          {image.description?.trim() ? <>
+            <p className="text-[0.68rem] font-extrabold uppercase tracking-[0.12em] text-white/60">Ghi chú</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-white/90">{image.description}</p>
+          </> : <p className="text-sm text-white/65">Hoạt động này không có ghi chú.</p>}
+        </div>
+        {image.activityHref ? <Link
+          href={image.activityHref}
+          onClick={onClose}
+          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-white/10 px-3 text-xs font-extrabold transition-colors hover:bg-white/20 active:bg-white/25"
+        >
+          Xem hoạt động <span aria-hidden="true"><ArrowUpRightIcon className="h-4 w-4" /></span>
+        </Link> : null}
+      </div> : null}
     </div>
   </div>, document.body);
 }

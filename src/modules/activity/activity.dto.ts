@@ -2,15 +2,22 @@ import { z } from "zod";
 import { isSafeImageUrl } from "@/lib/validation/safe-image-url";
 import { MAX_ACTIVITY_IMAGES } from "@/modules/integrations/storage/storage.constants";
 
+export const activityImageSyncStatusSchema = z.enum(["pending", "uploading", "failed", "synced"]);
+export type ActivityImageSyncStatus = z.infer<typeof activityImageSyncStatusSchema>;
+
+export const activityImageSchema = z.object({
+  url: z.string().min(1).max(2048).refine(isSafeImageUrl, "Invalid image URL"),
+  storageKey: z.string().min(1).max(512),
+  provider: z.enum(["cloudinary", "google-drive"]).optional(),
+  connectionId: z.string().min(1).max(200).optional(),
+});
+
 const base = z.object({
   occurredAt: z.string().datetime(),
   note: z.string().max(1000).default(""),
-  images: z.array(z.object({
-    url: z.string().min(1).max(2048).refine(isSafeImageUrl, "Invalid image URL"),
-    storageKey: z.string().min(1).max(512),
-    provider: z.enum(["cloudinary", "google-drive"]).optional(),
-    connectionId: z.string().min(1).max(200).optional(),
-  })).max(MAX_ACTIVITY_IMAGES).default([]),
+  images: z.array(activityImageSchema).max(MAX_ACTIVITY_IMAGES).default([]),
+  imageSyncStatus: activityImageSyncStatusSchema.optional(),
+  imageSyncExpectedCount: z.number().int().min(0).max(MAX_ACTIVITY_IMAGES).optional(),
 });
 
 export const activityInputSchema = z.discriminatedUnion("type", [
@@ -24,7 +31,21 @@ export const activityInputSchema = z.discriminatedUnion("type", [
   base.extend({ type: z.literal("moment") }),
   base.extend({ type: z.literal("custom"), label: z.string().trim().min(1).max(60) }),
 ]).superRefine((activity, context) => {
-  if (activity.type === "moment" && !activity.note.trim() && activity.images.length === 0) {
+  if (activity.imageSyncExpectedCount !== undefined && activity.imageSyncExpectedCount < activity.images.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["imageSyncExpectedCount"],
+      message: "Expected image count cannot be smaller than uploaded images",
+    });
+  }
+  if (activity.imageSyncStatus === "synced" && activity.imageSyncExpectedCount !== undefined && activity.imageSyncExpectedCount !== activity.images.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["imageSyncExpectedCount"],
+      message: "Synced image count must match uploaded images",
+    });
+  }
+  if (activity.type === "moment" && !activity.note.trim() && activity.images.length === 0 && !activity.imageSyncExpectedCount) {
     context.addIssue({
       code: "custom",
       path: ["note"],

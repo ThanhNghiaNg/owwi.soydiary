@@ -5,7 +5,7 @@ import { getActivityById } from "@/modules/activity/activity.repository";
 import { toActivityDto } from "@/modules/activity/activity.mapper";
 import { ActivityEditor } from "@/modules/activity/activity-editor";
 
-export default async function ActivityDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string; retry?: string }> }) {
+export default async function ActivityDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string }> }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const baby = await getBabyByOwner(session.user.id);
@@ -14,7 +14,7 @@ export default async function ActivityDetailPage({ params, searchParams }: { par
   const activity = await getActivityById(session.user.id, baby._id.toHexString(), id);
   if (!activity) notFound();
   const dto = toActivityDto(activity);
-  const { from, retry } = await searchParams;
+  const { from } = await searchParams;
   const returnHref = from === "history" ? "/app/history" : from === "gallery" ? "/app/gallery" : "/app";
-  return <ActivityEditor type={dto.type} babyId={baby._id.toHexString()} activity={dto} returnHref={returnHref} {...(retry ? { retryId: retry } : {})} />;
+  return <ActivityEditor type={dto.type} babyId={baby._id.toHexString()} activity={dto} returnHref={returnHref} />;
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { getActivityMeta } from "@/modules/activity/activity.registry";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
-import { ActivityImageGallery } from "@/modules/activity/activity-image-preview";
+import { ActivityImageSyncMedia } from "@/modules/activity/activity-image-sync-status";
 import type { ActivityType } from "@/modules/activity/activity.dto";
 import { babyAgeSentence, babyAgeText, formatClock, relativeFromNow } from "@/lib/date";
 import { ArrowUpRightIcon, CheckIcon } from "@/components/icons";
@@ -92,12 +92,12 @@ export function HomeScreen() {
                 </div>
               </div>
             </Link>
-            {activity.images.length ? <ActivityImageGallery
-              images={activity.images}
+            <ActivityImageSyncMedia
+              activity={activity}
               label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`}
               maxThumbnails={1}
               className="border-t border-[var(--color-border)] px-3.5 py-3"
-            /> : null}
+            />
             </article>;
           })}
 

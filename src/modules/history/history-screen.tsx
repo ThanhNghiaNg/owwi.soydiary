@@ -6,7 +6,7 @@ import useSWR from "swr";
 import { CalendarIcon, ChevronDown, ChevronLeft, XIcon } from "@/components/icons";
 import { formatClock } from "@/lib/date";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
-import { ActivityImageGallery } from "@/modules/activity/activity-image-preview";
+import { ActivityImageSyncMedia } from "@/modules/activity/activity-image-sync-status";
 import { activityDetail, formatActivityDuration } from "@/modules/activity/activity-format";
 import type { ActivityDto, ActivityType } from "@/modules/activity/activity.dto";
 import { ACTIVITY_REGISTRY, getActivityMeta } from "@/modules/activity/activity.registry";
@@ -138,12 +138,12 @@ function Timeline({ groups, hasMore, onLoadMore }: { groups: ReturnType<typeof g
               {activity.note ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--color-muted)]">{activity.note}</p> : null}
             </div>
           </Link>
-          {activity.images.length ? <ActivityImageGallery
-            images={activity.images}
+          <ActivityImageSyncMedia
+            activity={activity}
             label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`}
             maxThumbnails={1}
             className="border-t border-[var(--color-border)] px-4 py-3"
-          /> : null}
+          />
           </article>;
         })}
       </div>

@@ -2,7 +2,7 @@ import { ObjectId, type Filter } from "mongodb";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/mongodb";
 import type { ActivityDocument } from "./activity.model";
-import type { ActivityInput, ActivityType } from "./activity.dto";
+import type { ActivityImageSyncStatus, ActivityInput, ActivityType } from "./activity.dto";
 
 const collection = async () => (await db()).collection<ActivityDocument>("activities");
 
@@ -24,7 +24,13 @@ export async function listActivities(ownerId: string, babyId: string, limit = 50
   return (await collection()).find(query).sort({ occurredAt: -1 }).limit(limit).toArray();
 }
 
-export async function createActivity(ownerId: string, babyId: string, input: ActivityInput, clientMutationId?: string) {
+export async function createActivity(
+  ownerId: string,
+  babyId: string,
+  input: ActivityInput,
+  clientMutationId?: string,
+  preserveExistingOnRetry = false,
+) {
   const now = new Date();
   const documentId = clientMutationId
     ? new ObjectId(createHash("sha256").update(`${ownerId}:${babyId}:${clientMutationId}`).digest("hex").slice(0, 24))
@@ -32,6 +38,23 @@ export async function createActivity(ownerId: string, babyId: string, input: Act
   const doc = { ...input, _id: documentId, ownerId, babyId: new ObjectId(babyId), createdAt: now, updatedAt: now } as ActivityDocument;
   const col = await collection();
   if (clientMutationId) {
+    if (preserveExistingOnRetry) {
+      const saved = await col.findOneAndUpdate(
+        { _id: documentId, ownerId, babyId: new ObjectId(babyId) },
+        {
+          $setOnInsert: {
+            ...input,
+            ownerId,
+            babyId: new ObjectId(babyId),
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+        { upsert: true, returnDocument: "after" },
+      );
+      if (!saved) throw new Error("Failed to create idempotent activity");
+      return saved;
+    }
     const { _id: _documentId, ownerId: _ownerId, babyId: _babyId, createdAt: _createdAt, ...updateFields } = doc;
     const saved = await col.findOneAndUpdate(
       { _id: documentId, ownerId, babyId: new ObjectId(babyId) },
@@ -53,11 +76,42 @@ export async function getActivityById(ownerId: string, babyId: string, activityI
   return (await collection()).findOne({ _id: new ObjectId(activityId), ownerId, babyId: new ObjectId(babyId) });
 }
 
-export async function updateActivity(ownerId: string, babyId: string, activityId: string, input: ActivityInput) {
+export async function updateActivity(ownerId: string, babyId: string, activityId: string, input: ActivityInput, preserveImages = false) {
+  if (!ObjectId.isValid(activityId)) return null;
+  const updateFields = { ...input } as Partial<ActivityInput>;
+  if (preserveImages) {
+    delete updateFields.images;
+    delete updateFields.imageSyncStatus;
+    delete updateFields.imageSyncExpectedCount;
+  }
+  return (await collection()).findOneAndUpdate(
+    { _id: new ObjectId(activityId), ownerId, babyId: new ObjectId(babyId) },
+    { $set: { ...updateFields, updatedAt: new Date() } },
+    { returnDocument: "after" },
+  );
+}
+
+export async function updateActivityImageSync(
+  ownerId: string,
+  babyId: string,
+  activityId: string,
+  update: {
+    status: ActivityImageSyncStatus;
+    expectedCount: number;
+    images?: ActivityInput["images"];
+  },
+) {
   if (!ObjectId.isValid(activityId)) return null;
   return (await collection()).findOneAndUpdate(
     { _id: new ObjectId(activityId), ownerId, babyId: new ObjectId(babyId) },
-    { $set: { ...input, updatedAt: new Date() } },
+    {
+      $set: {
+        imageSyncStatus: update.status,
+        imageSyncExpectedCount: update.expectedCount,
+        ...(update.images ? { images: update.images } : {}),
+        updatedAt: new Date(),
+      },
+    },
     { returnDocument: "after" },
   );
 }

@@ -36,9 +36,10 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const rawMutationId = body && typeof body === "object" && "clientMutationId" in body ? (body as { clientMutationId?: unknown }).clientMutationId : undefined;
   const clientMutationId = typeof rawMutationId === "string" && rawMutationId.length >= 8 && rawMutationId.length <= 200 ? rawMutationId : undefined;
+  const preserveExistingOnRetry = Boolean(body && typeof body === "object" && "preserveExistingOnRetry" in body && (body as { preserveExistingOnRetry?: unknown }).preserveExistingOnRetry === true);
   if (parsed.data.type === "sleep" && new Date(parsed.data.endedAt) < new Date(parsed.data.occurredAt)) {
     return NextResponse.json({ error: "Wake time must be after sleep time" }, { status: 400 });
   }
-  const doc = await createActivity(session.user.id, baby._id.toHexString(), parsed.data, clientMutationId);
+  const doc = await createActivity(session.user.id, baby._id.toHexString(), parsed.data, clientMutationId, preserveExistingOnRetry);
   return NextResponse.json({ activity: toActivityDto(doc) }, { status: 201, headers: privateNoStore });
 }

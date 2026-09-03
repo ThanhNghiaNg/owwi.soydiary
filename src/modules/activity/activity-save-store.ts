@@ -3,7 +3,7 @@ import {
   type PersistedActivitySaveDraft,
 } from "./activity-save-draft";
 
-const DATABASE_NAME = "soydiary:activity-save-queue";
+const DATABASE_NAME = "soydiary:activity-image-sync-queue";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "drafts";
 

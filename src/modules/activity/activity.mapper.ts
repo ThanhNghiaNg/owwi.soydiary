@@ -7,7 +7,20 @@ export function toActivityDto(doc: ActivityDocument): ActivityDto {
   const { _id, babyId, ownerId: _ownerId, createdAt, updatedAt, ...input } = doc;
   const raw = input as unknown as Record<string, unknown>;
   const images = Array.isArray(raw.images) ? raw.images : [];
-  const common = { id: _id.toHexString(), babyId: babyId.toHexString(), createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
+  const imageSyncStatus = raw.imageSyncStatus === "pending" || raw.imageSyncStatus === "uploading" || raw.imageSyncStatus === "failed"
+    ? raw.imageSyncStatus
+    : "synced";
+  const imageSyncExpectedCount = typeof raw.imageSyncExpectedCount === "number"
+    ? Math.max(images.length, Math.trunc(raw.imageSyncExpectedCount))
+    : images.length;
+  const common = {
+    id: _id.toHexString(),
+    babyId: babyId.toHexString(),
+    createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
+    imageSyncStatus,
+    imageSyncExpectedCount,
+  };
 
   if (input.type === "bottle") {
     const amountMl = typeof raw.amountMl === "number"

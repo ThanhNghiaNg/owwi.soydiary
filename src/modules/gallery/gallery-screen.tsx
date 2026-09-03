@@ -14,6 +14,7 @@ import { formatClock } from "@/lib/date";
 import { GALLERY_REFRESH_EVENT } from "@/lib/swr";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
 import { activityDetail } from "@/modules/activity/activity-format";
+import { ActivityImageSyncNotice } from "@/modules/activity/activity-image-sync-status";
 import {
   ActivityImageGallery,
   ActivityImagePreview,
@@ -34,6 +35,7 @@ type CollectionImage = PreviewableActivityImage & {
   activityType: ActivityType;
   occurredAt: string;
   imageIndex: number;
+  imageSyncStatus: ActivityDto["imageSyncStatus"];
 };
 
 const numberFormatter = new Intl.NumberFormat("vi-VN");
@@ -89,6 +91,7 @@ function previewImagesForActivity(activity: ActivityDto): CollectionImage[] {
     activityType: activity.type,
     occurredAt: activity.occurredAt,
     imageIndex,
+    imageSyncStatus: activity.imageSyncStatus,
     title: meta.label,
     meta: previewMeta,
     description: activity.note,
@@ -270,7 +273,7 @@ function GalleryGrid({ images, onPreview }: { images: CollectionImage[]; onPrevi
               type="button"
               onClick={() => onPreview(globalIndex)}
               aria-label={`Xem ${image.alt ?? "hình ảnh hoạt động"}`}
-              className="group/image relative block aspect-square w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-sm transition-opacity active:opacity-80"
+              className={`group/image relative block aspect-square w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-sm transition-opacity active:opacity-80 ${image.imageSyncStatus === "pending" || image.imageSyncStatus === "uploading" ? "opacity-60 motion-safe:animate-pulse" : ""}`}
             >
               {/* Authenticated Drive URLs and multiple provider hosts are intentionally rendered without the Next image proxy. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -324,7 +327,10 @@ function GalleryTimeline({ activities }: { activities: ActivityDto[] }) {
             </div>
             <div className="p-4">
               {activity.note.trim() ? <p className="mb-3 whitespace-pre-wrap text-sm leading-6 text-[var(--color-ink)]">{activity.note}</p> : <p className="mb-3 text-xs italic text-[var(--color-muted)]">Hoạt động này không có ghi chú.</p>}
-              <ActivityImageGallery images={previewImages} maxThumbnails={4} label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`} />
+              <div className={activity.imageSyncStatus === "pending" || activity.imageSyncStatus === "uploading" ? "opacity-60 motion-safe:animate-pulse" : undefined}>
+                <ActivityImageGallery images={previewImages} maxThumbnails={4} label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`} />
+              </div>
+              <div className="mt-3"><ActivityImageSyncNotice activity={activity} compact /></div>
             </div>
           </article>;
         })}

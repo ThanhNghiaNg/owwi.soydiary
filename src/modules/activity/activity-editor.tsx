@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { activityInputSchema, type ActivityDto, type ActivityInput, type ActivityType } from "./activity.dto";
 import { getActivityMeta } from "./activity.registry";
@@ -9,8 +9,14 @@ import { ActivityAsset } from "./activity-asset";
 import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon, TrashIcon } from "@/components/icons";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
-import { removeActivityCaches, upsertActivityCaches } from "@/lib/swr";
-import { ActivityImageUploadError, ActivityImages, uploadPendingActivityImages, type PendingActivityImage } from "./activity-images";
+import { removeActivityCaches } from "@/lib/swr";
+import { ActivityImages, type PendingActivityImage } from "./activity-images";
+import { useActivitySaveQueue } from "./activity-save-queue";
+import {
+  hydrateActivitySaveImages,
+  withActivitySaveImages,
+  type ActivitySaveDraft,
+} from "./activity-save-draft";
 import {
   openStorageManager,
   type StorageManagerOpenReason,
@@ -57,7 +63,7 @@ function screenTitle(type: ActivityType) {
   return "Ghi hoạt động";
 }
 
-function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
+function initialFields(type: ActivityType, activity?: ActivityDto | ActivityInput): Fields {
   if (activity?.type === "breastfeeding") return { leftSeconds: activity.leftSeconds, rightSeconds: activity.rightSeconds };
   if (activity?.type === "bottle") return { amountMl: activity.amountMl, milkType: activity.milkType };
   if (activity?.type === "pump") return { leftMl: activity.leftMl, rightMl: activity.rightMl };
@@ -79,36 +85,42 @@ function initialFields(type: ActivityType, activity?: ActivityDto): Fields {
   return { leftSeconds: 0, rightSeconds: 0 };
 }
 
-export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: { type: ActivityType; babyId: string; activity?: ActivityDto; returnHref?: string }) {
+export function ActivityEditor({ type, babyId, activity, returnHref = "/app", retryId }: { type: ActivityType; babyId: string; activity?: ActivityDto; returnHref?: string; retryId?: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { cache, mutate } = useSWRConfig();
+  const { enqueueActivitySave, getFailedActivitySave, recoveryReady } = useActivitySaveQueue();
+  const [recoveryApplied, setRecoveryApplied] = useState(() => !retryId);
+  const usingRecoveredDraft = Boolean(retryId && recoveryApplied);
   const meta = getActivityMeta(type);
   const storedTimer = useBreastfeedingTimer();
   const editing = Boolean(activity);
-  const timer = !editing && type === "breastfeeding" && storedTimer?.babyId === babyId ? storedTimer : null;
+  const timer = !editing && !usingRecoveredDraft && type === "breastfeeding" && storedTimer?.babyId === babyId ? storedTimer : null;
   const timerNow = useTimerNow(Boolean(timer?.activeSide));
   const breastElapsed = getBreastfeedingElapsed(timer, timerNow);
-  const occurredDate = activity ? new Date(activity.occurredAt) : new Date();
+  const initialActivity = activity;
+  const occurredDate = initialActivity ? new Date(initialActivity.occurredAt) : new Date();
   const [date, setDate] = useState(() => localDateInputValue(occurredDate));
   const [time, setTime] = useState(() => localTimeInputValue(occurredDate));
-  const [note, setNote] = useState(activity?.note ?? "");
+  const [note, setNote] = useState(initialActivity?.note ?? "");
   const [images, setImages] = useState<PendingActivityImage[]>(activity?.images ?? []);
   const uploadFolderKey = useRef(activity?.id ?? crypto.randomUUID());
   const clientMutationId = useRef(crypto.randomUUID());
-  const [busy, setBusy] = useState(false);
+  const recoveryId = useRef(retryId ?? crypto.randomUUID());
+  const [queued, setQueued] = useState(false);
   const [error, setError] = useState("");
-  const [storageIssue, setStorageIssue] = useState<Exclude<StorageManagerOpenReason, "manage">>();
+  const [storageIssue, setStorageIssue] = useState<Exclude<StorageManagerOpenReason, "manage"> | undefined>(undefined);
   const errorRef = useRef<HTMLDivElement>(null);
-  const [saved, setSaved] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [fields, setFields] = useState<Fields>(() => initialFields(type, activity));
+  const [fields, setFields] = useState<Fields>(() => initialFields(type, initialActivity));
 
   const timerDate = timer ? new Date(timer.occurredAt) : null;
   const displayedDate = timerDate ? localDateInputValue(timerDate) : date;
   const displayedTime = timerDate ? localTimeInputValue(timerDate) : time;
   const displayedNote = timer ? timer.note : note;
-  const totalBreast = editing ? Number(fields.leftSeconds) + Number(fields.rightSeconds) : breastElapsed.totalSeconds;
+  const totalBreast = editing || usingRecoveredDraft ? Number(fields.leftSeconds) + Number(fields.rightSeconds) : breastElapsed.totalSeconds;
   const payload = useMemo<ActivityInput | null>(() => {
     const base = {
       type,
@@ -117,7 +129,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       images: images.map(({ file: _file, ...image }) => image),
     } as const;
     switch (type) {
-      case "breastfeeding": return { ...base, type, leftSeconds: editing ? Number(fields.leftSeconds) : breastElapsed.leftSeconds, rightSeconds: editing ? Number(fields.rightSeconds) : breastElapsed.rightSeconds };
+      case "breastfeeding": return { ...base, type, leftSeconds: editing || usingRecoveredDraft ? Number(fields.leftSeconds) : breastElapsed.leftSeconds, rightSeconds: editing || usingRecoveredDraft ? Number(fields.rightSeconds) : breastElapsed.rightSeconds };
       case "bottle": return { ...base, type, milkType: String(fields.milkType) as "breast-milk" | "formula" | "other", amountMl: Number(fields.amountMl) };
       case "pump": return { ...base, type, leftMl: Number(fields.leftMl), rightMl: Number(fields.rightMl) };
       case "diaper": return { ...base, type, diaperType: String(fields.diaperType) as "pee" | "poop" | "mixed" | "dry", color: String(fields.color || ""), consistency: String(fields.consistency || "") };
@@ -127,11 +139,10 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       case "moment": return { ...base, type };
       case "custom": return { ...base, type, label: String(fields.label) };
     }
-  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, images, note, time, timer?.note, timer?.occurredAt, type]);
+  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, images, note, time, timer?.note, timer?.occurredAt, type, usingRecoveredDraft]);
 
   const field = useCallback((name: string, value: string | number) => {
     setFields((previous) => ({ ...previous, [name]: value }));
-    setSaved(false);
   }, []);
 
   useEffect(() => {
@@ -146,91 +157,75 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     return () => window.cancelAnimationFrame(frame);
   }, [error]);
 
-  async function save() {
-    if (!payload) return;
-    setBusy(true);
+  useEffect(() => {
+    if (!retryId || recoveryApplied || !recoveryReady) return;
+    const recovered = getFailedActivitySave(retryId);
+    const applyRecovery = window.setTimeout(() => {
+      if (recovered && recovered.babyId === babyId && recovered.type === type && recovered.activityId === activity?.id) {
+        const recoveredAt = new Date(recovered.input.occurredAt);
+        setDate(localDateInputValue(recoveredAt));
+        setTime(localTimeInputValue(recoveredAt));
+        setNote(recovered.input.note ?? "");
+        setImages(hydrateActivitySaveImages(recovered.images));
+        setFields(initialFields(type, recovered.input));
+        uploadFolderKey.current = recovered.uploadFolderKey;
+        clientMutationId.current = recovered.clientMutationId;
+        setError(recovered.failure?.message ?? "Hoạt động này chưa được lưu. Bạn kiểm tra rồi lưu lại nhé.");
+        setStorageIssue(recovered.failure?.storageIssue);
+      }
+      setRecoveryApplied(true);
+    }, 0);
+    return () => window.clearTimeout(applyRecovery);
+  }, [activity?.id, babyId, getFailedActivitySave, recoveryApplied, recoveryReady, retryId, type]);
+
+  function retryHref() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("retry", recoveryId.current);
+    return `${pathname}?${params.toString()}`;
+  }
+
+  function save() {
+    if (!payload || queued) return;
     setError("");
     setStorageIssue(undefined);
-    try {
-      if (type === "moment" && !payload.note.trim() && images.length === 0) {
-        setError("Hãy thêm mô tả hoặc ít nhất một hình ảnh cho khoảnh khắc này.");
-        return;
-      }
-      const validationImages = images.map((image, index) => {
-        const { file: _file, ...storedImage } = image;
-        return image.file ? { ...storedImage, url: `https://pending.invalid/${index}` } : storedImage;
-      });
-      const validated = activityInputSchema.safeParse({ ...payload, images: validationImages });
-      if (!validated.success) {
-        setError("Thông tin hoạt động chưa hợp lệ. Bạn kiểm tra lại các trường rồi lưu nhé.");
-        return;
-      }
-      if (
-        validated.data.type === "sleep" &&
-        new Date(validated.data.endedAt) < new Date(validated.data.occurredAt)
-      ) {
-        setError("Thời điểm thức dậy phải sau thời điểm bắt đầu ngủ.");
-        return;
-      }
-      const currentElapsed = getBreastfeedingElapsed(timer, Date.now());
-      const uploadedImages = await uploadPendingActivityImages(images, uploadFolderKey.current);
-      setImages(uploadedImages);
-      const finalPayloadBase = { ...payload, images: uploadedImages };
-      const finalPayload = type === "breastfeeding" && timer
-        ? { ...finalPayloadBase, leftSeconds: currentElapsed.leftSeconds, rightSeconds: currentElapsed.rightSeconds }
-        : finalPayloadBase;
-      const requestPayload = !activity
-        ? {
-            ...finalPayload,
-            clientMutationId:
-              type === "breastfeeding" && timer
-                ? breastfeedingTimerMutationId(timer)
-                : clientMutationId.current,
-          }
-        : finalPayload;
-      const response = await fetch(activity ? `/api/activities/${activity.id}` : "/api/activities", {
-        method: activity ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(requestPayload),
-      });
-      if (!response.ok) {
-        setError("Chưa thể lưu hoạt động. Bạn kiểm tra lại thông tin nhé.");
-        return;
-      }
-      const json = await response.json() as { activity: ActivityDto };
-      setImages(json.activity.images);
-      await upsertActivityCaches(cache, mutate, json.activity);
-      if (activity) {
-        setSaved(true);
-        if ("vibrate" in navigator) navigator.vibrate(10);
-        router.refresh();
-      } else {
-        if (type === "breastfeeding") clearBreastfeedingTimer();
-        router.replace(returnHref);
-        router.refresh();
-      }
-    } catch (caught) {
-      if (caught instanceof ActivityImageUploadError) setImages(caught.images);
-      const code = caught instanceof Error ? caught.message : "";
-      if (code === "STORAGE_CONNECTION_REQUIRED") {
-        setStorageIssue("connection-required");
-        setError("Bạn chưa có nơi lưu ảnh. Hãy kết nối Cloudinary hoặc Google Drive, rồi quay lại bấm Lưu hoạt động.");
-      } else if (code === "STORAGE_RECONNECT_REQUIRED") {
-        setStorageIssue("reconnect-required");
-        setError("Nơi lưu ảnh hiện tại cần được kết nối lại. Hãy mở quản lý nơi lưu ảnh, kết nối lại hoặc chọn tài khoản khác, rồi bấm Lưu hoạt động.");
-      } else if (code === "STORAGE_NOT_CONFIGURED") {
-        setStorageIssue("connection-required");
-        setError("Chưa có dịch vụ lưu ảnh khả dụng trên máy chủ. Mở quản lý nơi lưu ảnh để xem trạng thái cấu hình.");
-      } else if (code === "IMAGE_PAYLOAD_TOO_LARGE") {
-        setError("Tổng dung lượng ảnh quá lớn. Hãy bớt ảnh hoặc chọn ảnh nhẹ hơn rồi thử lại.");
-      } else if (code.includes("STORAGE") || code.includes("UPLOAD")) {
-        setError("Chưa thể tải ảnh lên storage. Các ảnh chưa thành công vẫn được giữ để bạn thử lại.");
-      } else {
-        setError("Mất kết nối. Bạn kiểm tra mạng rồi thử lưu lại nhé.");
-      }
-    } finally {
-      setBusy(false);
+    if (type === "moment" && !payload.note.trim() && images.length === 0) {
+      setError("Hãy thêm mô tả hoặc ít nhất một hình ảnh cho khoảnh khắc này.");
+      return;
     }
+    const candidate = withActivitySaveImages(payload, images);
+    const validated = activityInputSchema.safeParse(candidate);
+    if (!validated.success) {
+      setError("Thông tin hoạt động chưa hợp lệ. Bạn kiểm tra lại các trường rồi lưu nhé.");
+      return;
+    }
+    if (validated.data.type === "sleep" && new Date(validated.data.endedAt) < new Date(validated.data.occurredAt)) {
+      setError("Thời điểm thức dậy phải sau thời điểm bắt đầu ngủ.");
+      return;
+    }
+
+    const elapsed = getBreastfeedingElapsed(timer, Date.now());
+    const input = type === "breastfeeding" && timer
+      ? { ...payload, leftSeconds: elapsed.leftSeconds, rightSeconds: elapsed.rightSeconds }
+      : payload;
+    const draft: ActivitySaveDraft = {
+      version: 1,
+      id: recoveryId.current,
+      babyId,
+      type,
+      ...(activity ? { activityId: activity.id } : {}),
+      returnHref,
+      retryHref: retryHref(),
+      input: withActivitySaveImages(input, images),
+      images,
+      uploadFolderKey: uploadFolderKey.current,
+      clientMutationId: type === "breastfeeding" && timer ? breastfeedingTimerMutationId(timer) : clientMutationId.current,
+      submittedAt: Date.now(),
+    };
+    setQueued(true);
+    enqueueActivitySave(draft);
+    if (type === "breastfeeding" && timer) clearBreastfeedingTimer();
+    if ("vibrate" in navigator) navigator.vibrate(10);
+    router.replace(returnHref);
   }
 
   async function remove() {
@@ -259,20 +254,23 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
 
   function changeDate(nextDate: string) {
     setDate(nextDate);
-    setSaved(false);
     if (timer) updateBreastfeedingDraft({ occurredAt: combineLocalDateTime(nextDate, displayedTime) });
   }
 
   function changeTime(nextTime: string) {
     setTime(nextTime);
-    setSaved(false);
     if (timer) updateBreastfeedingDraft({ occurredAt: combineLocalDateTime(displayedDate, nextTime) });
   }
 
   function changeNote(nextNote: string) {
     setNote(nextNote);
-    setSaved(false);
     if (timer) updateBreastfeedingDraft({ note: nextNote });
+  }
+
+  if (retryId && !recoveryApplied) {
+    return <div className="app-page grid min-h-dvh place-items-center px-6 pb-24 text-center" role="status" aria-live="polite">
+      <p className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-[var(--color-muted)] shadow-sm">Đang khôi phục hoạt động và hình ảnh…</p>
+    </div>;
   }
 
   return <div className="app-page min-w-0 max-w-full overflow-x-clip pb-4">
@@ -312,7 +310,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       </section>
 
       {type !== "moment" ? <section className="surface-card min-w-0 max-w-full overflow-hidden p-5">
-        {type === "breastfeeding" ? editing
+        {type === "breastfeeding" ? editing || usingRecoveredDraft
           ? <BreastEditFields fields={fields} setField={field} />
           : <BreastFields timer={timer} now={timerNow} draft={{ babyId, occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time), note: displayedNote }} />
         : null}
@@ -337,7 +335,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         />
       </label>
 
-      <ActivityImages images={images} disabled={busy} onChange={(next) => { setImages(next); setSaved(false); }} />
+      <ActivityImages images={images} disabled={queued} onChange={setImages} />
 
       {error ? <div ref={errorRef} role="alert" tabIndex={-1} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">
         <p className="leading-6">{error}</p>
@@ -349,15 +347,14 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
           {storageIssue === "reconnect-required" ? "Mở và kết nối lại" : "Mở nơi lưu ảnh"}
         </button> : null}
       </div> : null}
-      {saved ? <p role="status" className="rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 text-center text-sm font-extrabold text-[var(--color-accent)]">Đã lưu thay đổi</p> : null}
       {editing ? <button type="button" onClick={() => setDeleteOpen(true)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 text-sm font-extrabold text-[var(--color-danger)] transition-colors hover:bg-red-50 active:bg-red-100">
         <TrashIcon className="h-5 w-5" /> Xóa hoạt động
       </button> : null}
     </main>
 
     <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[620px] border-t border-[var(--color-border)] bg-white/95 px-4 pt-3 backdrop-blur-xl sm:px-6">
-      <button onClick={save} disabled={busy || (editing && saved) || (type === "breastfeeding" && totalBreast === 0)} className="primary-button w-full">
-        {busy ? "Đang lưu…" : editing ? saved ? "Đã lưu" : "Lưu thay đổi" : "Lưu hoạt động"}
+      <button onClick={save} disabled={queued || (type === "breastfeeding" && totalBreast === 0)} className="primary-button w-full">
+        {queued ? "Đang chuyển về…" : retryId ? "Lưu lại" : editing ? "Lưu thay đổi" : "Lưu hoạt động"}
       </button>
     </div>
     <ConfirmDialog

@@ -9,9 +9,10 @@ import {
   MAX_UPLOAD_FILES_PER_REQUEST,
 } from "@/modules/integrations/storage/storage.constants";
 import { ActivityImagePreview } from "./activity-image-preview";
+import type { ActivitySaveImage } from "./activity-save-draft";
 
 export type ActivityImage = ActivityInput["images"][number];
-export type PendingActivityImage = ActivityImage & { file?: File };
+export type PendingActivityImage = ActivitySaveImage;
 
 export class ActivityImageUploadError extends Error {
   constructor(message: string, readonly images: PendingActivityImage[]) {
@@ -85,6 +86,9 @@ export function ActivityImages({ images, onChange, disabled }: {
 
   useEffect(() => {
     const activeUrls = new Set(images.filter((image) => image.file).map((image) => image.url));
+    images.forEach((image) => {
+      if (image.file && image.url.startsWith("blob:")) objectUrlsRef.current.add(image.url);
+    });
     objectUrlsRef.current.forEach((url) => {
       if (!activeUrls.has(url)) {
         URL.revokeObjectURL(url);

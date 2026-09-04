@@ -10,15 +10,15 @@ import { CalendarIcon, ClockIcon, ChevronLeft, PauseIcon, PlayIcon, TrashIcon } 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { combineLocalDateTime, localDateInputValue, localTimeInputValue } from "@/lib/date";
 import { removeActivityCaches } from "@/lib/swr";
-import { ActivityImages, type PendingActivityImage } from "./activity-images";
+import { ActivityMediaPicker, type PendingActivityMedia } from "./activity-media";
 import { useActivitySaveQueue } from "./activity-save-queue";
 import {
   describeActivitySaveFailure,
-  pendingActivityImageCount,
-  withActivitySaveImages,
+  pendingActivityMediaCount,
+  withActivitySaveMedia,
   type ActivitySaveDraft,
 } from "./activity-save-draft";
-import { ActivityImageSyncNotice } from "./activity-image-sync-status";
+import { ActivityMediaSyncNotice } from "./activity-media-sync-status";
 import {
   openStorageManager,
   type StorageManagerOpenReason,
@@ -90,7 +90,7 @@ function initialFields(type: ActivityType, activity?: ActivityDto | ActivityInpu
 export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: { type: ActivityType; babyId: string; activity?: ActivityDto; returnHref?: string }) {
   const router = useRouter();
   const { cache, mutate } = useSWRConfig();
-  const { saveActivityWithImages, cancelActivityImageSync, imageJobs, recoveryReady } = useActivitySaveQueue();
+  const { saveActivityWithMedia, cancelActivityMediaSync, mediaJobs, recoveryReady } = useActivitySaveQueue();
   const meta = getActivityMeta(type);
   const storedTimer = useBreastfeedingTimer();
   const editing = Boolean(activity);
@@ -102,7 +102,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const [date, setDate] = useState(() => localDateInputValue(occurredDate));
   const [time, setTime] = useState(() => localTimeInputValue(occurredDate));
   const [note, setNote] = useState(initialActivity?.note ?? "");
-  const [images, setImages] = useState<PendingActivityImage[]>(activity?.images ?? []);
+  const [media, setMedia] = useState<PendingActivityMedia[]>(activity?.media ?? []);
   const uploadFolderKey = useRef(activity?.id ?? crypto.randomUUID());
   const clientMutationId = useRef(crypto.randomUUID());
   const jobId = useRef(crypto.randomUUID());
@@ -118,16 +118,16 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
   const displayedDate = timerDate ? localDateInputValue(timerDate) : date;
   const displayedTime = timerDate ? localTimeInputValue(timerDate) : time;
   const displayedNote = timer ? timer.note : note;
-  const localImageJob = activity ? imageJobs[activity.id] : undefined;
-  const serverImageSyncStatus = activity?.imageSyncStatus ?? "synced";
-  const missingLocalImageJob = Boolean(activity && recoveryReady && !localImageJob && (
-    serverImageSyncStatus === "pending" || serverImageSyncStatus === "uploading"
+  const localMediaJob = activity ? mediaJobs[activity.id] : undefined;
+  const serverMediaSyncStatus = activity?.mediaSyncStatus ?? "synced";
+  const missingLocalMediaJob = Boolean(activity && recoveryReady && !localMediaJob && (
+    serverMediaSyncStatus === "pending" || serverMediaSyncStatus === "uploading"
   ));
-  const imageSyncStatus = missingLocalImageJob ? "failed" : localImageJob?.status ?? serverImageSyncStatus;
-  const imageSyncLocked = Boolean(activity && (
-    imageSyncStatus === "pending"
-    || imageSyncStatus === "uploading"
-    || (imageSyncStatus === "failed" && localImageJob)
+  const mediaSyncStatus = missingLocalMediaJob ? "failed" : localMediaJob?.status ?? serverMediaSyncStatus;
+  const mediaSyncLocked = Boolean(activity && (
+    mediaSyncStatus === "pending"
+    || mediaSyncStatus === "uploading"
+    || (mediaSyncStatus === "failed" && localMediaJob)
   ));
   const totalBreast = editing ? Number(fields.leftSeconds) + Number(fields.rightSeconds) : breastElapsed.totalSeconds;
   const payload = useMemo<ActivityInput | null>(() => {
@@ -135,7 +135,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       type,
       occurredAt: timer?.occurredAt ?? combineLocalDateTime(date, time),
       note: timer?.note ?? note,
-      images: images.map(({ file: _file, ...image }) => image),
+      media: media.map(({ file: _file, ...item }) => item),
     } as const;
     switch (type) {
       case "breastfeeding": return { ...base, type, leftSeconds: editing ? Number(fields.leftSeconds) : breastElapsed.leftSeconds, rightSeconds: editing ? Number(fields.rightSeconds) : breastElapsed.rightSeconds };
@@ -148,7 +148,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       case "moment": return { ...base, type };
       case "custom": return { ...base, type, label: String(fields.label) };
     }
-  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, images, note, time, timer?.note, timer?.occurredAt, type]);
+  }, [breastElapsed.leftSeconds, breastElapsed.rightSeconds, date, editing, fields, media, note, time, timer?.note, timer?.occurredAt, type]);
 
   const field = useCallback((name: string, value: string | number) => {
     setFields((previous) => ({ ...previous, [name]: value }));
@@ -170,18 +170,18 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
     if (!payload || saving) return;
     setError("");
     setStorageIssue(undefined);
-    if (type === "moment" && !payload.note.trim() && images.length === 0) {
-      setError("Hãy thêm mô tả hoặc ít nhất một hình ảnh cho khoảnh khắc này.");
+    if (type === "moment" && !payload.note.trim() && media.length === 0) {
+      setError("Hãy thêm mô tả hoặc ít nhất một ảnh/video cho khoảnh khắc này.");
       return;
     }
-    const validationInput = activity && imageSyncStatus !== "synced"
+    const validationInput = activity && mediaSyncStatus !== "synced"
       ? {
           ...payload,
-          imageSyncStatus,
-          imageSyncExpectedCount: activity.imageSyncExpectedCount ?? images.length,
+          mediaSyncStatus,
+          mediaSyncExpectedCount: activity.mediaSyncExpectedCount ?? media.length,
         }
       : payload;
-    const candidate = withActivitySaveImages(validationInput, images);
+    const candidate = withActivitySaveMedia(validationInput, media);
     const validated = activityInputSchema.safeParse(candidate);
     if (!validated.success) {
       setError("Thông tin hoạt động chưa hợp lệ. Bạn kiểm tra lại các trường rồi lưu nhé.");
@@ -197,21 +197,21 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       ? { ...payload, leftSeconds: elapsed.leftSeconds, rightSeconds: elapsed.rightSeconds }
       : payload;
     const draft: ActivitySaveDraft = {
-      version: 2,
+      version: 3,
       id: jobId.current,
       babyId,
       type,
       ...(activity ? { activityId: activity.id } : {}),
-      input: withActivitySaveImages(input, images),
-      images,
+      input: withActivitySaveMedia(input, media),
+      media,
       uploadFolderKey: uploadFolderKey.current,
       clientMutationId: type === "breastfeeding" && timer ? breastfeedingTimerMutationId(timer) : clientMutationId.current,
       submittedAt: Date.now(),
-      preserveImageSync: Boolean(activity && imageSyncStatus !== "synced" && pendingActivityImageCount(images) === 0),
+      preserveMediaSync: Boolean(activity && mediaSyncStatus !== "synced" && pendingActivityMediaCount(media) === 0),
     };
     setSaving(true);
     try {
-      await saveActivityWithImages(draft);
+      await saveActivityWithMedia(draft);
       if (type === "breastfeeding" && timer) clearBreastfeedingTimer();
       if ("vibrate" in navigator) navigator.vibrate(10);
       router.replace(returnHref);
@@ -235,7 +235,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         setError("Chưa thể xóa hoạt động. Bạn thử lại sau nhé.");
         return;
       }
-      cancelActivityImageSync(activity.id);
+      cancelActivityMediaSync(activity.id);
       await removeActivityCaches(cache, mutate, activity.id);
       if ("vibrate" in navigator) navigator.vibrate(10);
       router.replace(returnHref);
@@ -315,7 +315,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
       <label className="surface-card block p-5">
         <span className="mb-2 block text-sm font-extrabold">
           {type === "moment" ? "Mô tả" : "Ghi chú"}{" "}
-          <span className="font-medium text-[var(--color-muted)]">{type === "moment" ? "(hoặc thêm hình ảnh)" : "(không bắt buộc)"}</span>
+          <span className="font-medium text-[var(--color-muted)]">{type === "moment" ? "(hoặc thêm ảnh/video)" : "(không bắt buộc)"}</span>
         </span>
         <textarea
           value={displayedNote}
@@ -325,8 +325,8 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
         />
       </label>
 
-      {activity ? <ActivityImageSyncNotice activity={activity} /> : null}
-      <ActivityImages images={images} disabled={saving || imageSyncLocked} onChange={setImages} />
+      {activity ? <ActivityMediaSyncNotice activity={activity} /> : null}
+      <ActivityMediaPicker media={media} disabled={saving || mediaSyncLocked} onChange={setMedia} />
 
       {error ? <div ref={errorRef} role="alert" tabIndex={-1} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">
         <p className="leading-6">{error}</p>
@@ -335,7 +335,7 @@ export function ActivityEditor({ type, babyId, activity, returnHref = "/app" }: 
           onClick={(event) => openStorageManager({ reason: storageIssue, returnFocus: event.currentTarget })}
           className="mt-3 min-h-12 w-full rounded-xl bg-[var(--color-primary)] px-4 font-extrabold text-white transition-colors hover:bg-[var(--color-primary-strong)] active:bg-[#452b8a]"
         >
-          {storageIssue === "reconnect-required" ? "Mở và kết nối lại" : "Mở nơi lưu ảnh"}
+          {storageIssue === "reconnect-required" ? "Mở và kết nối lại" : "Mở nơi lưu media"}
         </button> : null}
       </div> : null}
       {editing ? <button type="button" onClick={() => setDeleteOpen(true)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 text-sm font-extrabold text-[var(--color-danger)] transition-colors hover:bg-red-50 active:bg-red-100">

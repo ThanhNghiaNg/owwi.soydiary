@@ -14,12 +14,13 @@ import { formatClock } from "@/lib/date";
 import { GALLERY_REFRESH_EVENT } from "@/lib/swr";
 import { ActivityAsset } from "@/modules/activity/activity-asset";
 import { activityDetail } from "@/modules/activity/activity-format";
-import { ActivityImageSyncNotice } from "@/modules/activity/activity-image-sync-status";
+import { ActivityMediaSyncNotice } from "@/modules/activity/activity-media-sync-status";
 import {
-  ActivityImageGallery,
-  ActivityImagePreview,
-  type PreviewableActivityImage,
-} from "@/modules/activity/activity-image-preview";
+  ActivityMediaGallery,
+  ActivityMediaPreview,
+  ActivityMediaThumbnail,
+  type PreviewableActivityMedia,
+} from "@/modules/activity/activity-media-preview";
 import type { ActivityDto, ActivityType } from "@/modules/activity/activity.dto";
 import { ACTIVITY_REGISTRY, getActivityMeta } from "@/modules/activity/activity.registry";
 import {
@@ -30,12 +31,12 @@ import {
 
 type GalleryView = "grid" | "timeline";
 
-type CollectionImage = PreviewableActivityImage & {
+type CollectionMedia = PreviewableActivityMedia & {
   activityId: string;
   activityType: ActivityType;
   occurredAt: string;
-  imageIndex: number;
-  imageSyncStatus: ActivityDto["imageSyncStatus"];
+  mediaIndex: number;
+  mediaSyncStatus: ActivityDto["mediaSyncStatus"];
 };
 
 const numberFormatter = new Intl.NumberFormat("vi-VN");
@@ -82,20 +83,20 @@ function galleryActivityDetail(activity: ActivityDto) {
   return activityDetail(activity);
 }
 
-function previewImagesForActivity(activity: ActivityDto): CollectionImage[] {
+function previewMediaForActivity(activity: ActivityDto): CollectionMedia[] {
   const meta = getActivityMeta(activity.type);
   const previewMeta = `${previewDateFormatter.format(new Date(activity.occurredAt))} · ${galleryActivityDetail(activity)}`;
-  return activity.images.map((image, imageIndex) => ({
-    ...image,
+  return activity.media.map((item, mediaIndex) => ({
+    ...item,
     activityId: activity.id,
     activityType: activity.type,
     occurredAt: activity.occurredAt,
-    imageIndex,
-    imageSyncStatus: activity.imageSyncStatus,
+    mediaIndex,
+    mediaSyncStatus: activity.mediaSyncStatus,
     title: meta.label,
     meta: previewMeta,
     description: activity.note,
-    alt: `Ảnh ${imageIndex + 1} của ${meta.label} lúc ${formatClock(activity.occurredAt)}`,
+    alt: `${item.kind === "video" ? "Video" : "Ảnh"} ${mediaIndex + 1} của ${meta.label} lúc ${formatClock(activity.occurredAt)}`,
     activityHref: `/app/activity/${activity.id}?from=gallery`,
   }));
 }
@@ -133,7 +134,7 @@ export function GalleryScreen() {
       return timeDifference || right.id.localeCompare(left.id);
     });
   }, [data]);
-  const images = useMemo(() => activities.flatMap(previewImagesForActivity), [activities]);
+  const media = useMemo(() => activities.flatMap(previewMediaForActivity), [activities]);
   const summary = data?.[0]?.summary;
   const lastPage = data?.at(-1);
   const hasMore = Boolean(lastPage?.nextCursor);
@@ -158,14 +159,14 @@ export function GalleryScreen() {
           <GalleryIcon className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-primary-strong)]">Kho ảnh của bé</p>
+          <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-primary-strong)]">Media của bé</p>
           <h1 id="gallery-overview-title" className="mt-1 text-2xl font-black tracking-tight">
-            {summary ? `${numberFormatter.format(summary.imageCount)} hình ảnh` : "Những điều đáng nhớ"}
+            {summary ? `${numberFormatter.format(summary.mediaCount)} ảnh và video` : "Những điều đáng nhớ"}
           </h1>
           <p className="mt-1 text-sm leading-6 text-[var(--color-muted)]">
             {summary
-              ? `Được lưu từ ${numberFormatter.format(summary.activityCount)} hoạt động có hình ảnh.`
-              : "Ảnh từ các hoạt động sẽ được sắp xếp tại đây."}
+              ? `Được lưu từ ${numberFormatter.format(summary.activityCount)} hoạt động có media.`
+              : "Ảnh và video từ các hoạt động sẽ được sắp xếp tại đây."}
           </p>
         </div>
       </div>
@@ -181,7 +182,7 @@ export function GalleryScreen() {
       </div>
 
       <div role="group" aria-label="Kiểu hiển thị bộ sưu tập" className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-[var(--color-canvas)] p-1">
-        <ViewButton selected={view === "grid"} label="Lưới ảnh" icon={<GridIcon className="h-5 w-5" />} onClick={() => changeView("grid")} />
+        <ViewButton selected={view === "grid"} label="Lưới media" icon={<GridIcon className="h-5 w-5" />} onClick={() => changeView("grid")} />
         <ViewButton selected={view === "timeline"} label="Dòng thời gian" icon={<TimelineIcon className="h-5 w-5" />} onClick={() => changeView("timeline")} />
       </div>
 
@@ -200,22 +201,22 @@ export function GalleryScreen() {
     </section>
 
     {error ? <div role="alert" className="mt-4 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]">
-      <p className="min-w-0 flex-1">Chưa thể tải bộ sưu tập. Các ảnh đã lưu vẫn an toàn.</p>
+      <p className="min-w-0 flex-1">Chưa thể tải bộ sưu tập. Media đã lưu vẫn an toàn.</p>
       <button type="button" onClick={() => void mutate()} className="min-h-11 shrink-0 rounded-xl bg-white px-3 font-extrabold shadow-sm transition-colors hover:bg-red-100 active:bg-red-200">Thử lại</button>
     </div> : null}
 
     {!error && isLoading && !data ? <GallerySkeleton view={view} /> : null}
 
-    {(!error || data) && (!isLoading || data) ? images.length
+    {(!error || data) && (!isLoading || data) ? media.length
       ? view === "grid"
-        ? <GalleryGrid images={images} onPreview={setPreviewIndex} />
+        ? <GalleryGrid media={media} onPreview={setPreviewIndex} />
         : <GalleryTimeline activities={activities} />
       : <GalleryEmptyState filter={filter} onReset={() => changeFilter("all")} />
     : null}
 
-    {images.length ? <div className="mt-7 text-center">
+    {media.length ? <div className="mt-7 text-center">
       <p role="status" className="text-xs font-semibold text-[var(--color-muted)]">
-        Đang hiển thị {numberFormatter.format(images.length)}{summary ? ` / ${numberFormatter.format(summary.imageCount)}` : ""} ảnh · {selectedFilterLabel}
+        Đang hiển thị {numberFormatter.format(media.length)}{summary ? ` / ${numberFormatter.format(summary.mediaCount)}` : ""} media · {selectedFilterLabel}
       </p>
       {hasMore ? <button
         type="button"
@@ -223,12 +224,12 @@ export function GalleryScreen() {
         onClick={() => void setSize((currentSize) => currentSize + 1)}
         className="mt-3 min-h-12 w-full rounded-2xl border border-[var(--color-primary)] bg-white px-4 text-sm font-extrabold text-[var(--color-primary-strong)] transition-colors hover:bg-[var(--color-primary-soft)] active:bg-[var(--color-primary-soft)] disabled:cursor-not-allowed disabled:border-[var(--color-border)] disabled:text-[var(--color-muted)]"
       >
-        {loadingMore ? "Đang tải thêm…" : "Xem thêm hình ảnh"}
+        {loadingMore ? "Đang tải thêm…" : "Xem thêm media"}
       </button> : <p className="mt-2 text-sm font-extrabold text-[var(--color-accent)]">Đã xem toàn bộ bộ sưu tập</p>}
     </div> : null}
 
-    {previewIndex !== null ? <ActivityImagePreview
-      images={images}
+    {previewIndex !== null ? <ActivityMediaPreview
+      media={media}
       index={previewIndex}
       onIndexChange={setPreviewIndex}
       onClose={() => setPreviewIndex(null)}
@@ -247,41 +248,39 @@ function ViewButton({ selected, label, icon, onClick }: { selected: boolean; lab
   </button>;
 }
 
-function GalleryGrid({ images, onPreview }: { images: CollectionImage[]; onPreview: (index: number) => void }) {
+function GalleryGrid({ media, onPreview }: { media: CollectionMedia[]; onPreview: (index: number) => void }) {
   const groups = useMemo(() => {
-    const grouped = new Map<string, CollectionImage[]>();
-    images.forEach((image) => {
-      const key = localMonthKey(image.occurredAt);
-      grouped.set(key, [...(grouped.get(key) ?? []), image]);
+    const grouped = new Map<string, CollectionMedia[]>();
+    media.forEach((item) => {
+      const key = localMonthKey(item.occurredAt);
+      grouped.set(key, [...(grouped.get(key) ?? []), item]);
     });
     return [...grouped.entries()].map(([key, items]) => ({ key, items, title: monthFormatter.format(new Date(items[0]!.occurredAt)) }));
-  }, [images]);
-  const imageIndex = new Map(images.map((image, index) => [`${image.activityId}:${image.imageIndex}`, index]));
+  }, [media]);
+  const mediaIndex = new Map(media.map((item, index) => [`${item.activityId}:${item.mediaIndex}`, index]));
 
   return <div className="mt-6 space-y-7">
     {groups.map((group) => <section key={group.key} aria-labelledby={`gallery-month-${group.key}`}>
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 id={`gallery-month-${group.key}`} className="text-lg font-black capitalize tracking-tight">{group.title}</h2>
-        <span className="text-xs font-bold text-[var(--color-muted)]">{numberFormatter.format(group.items.length)} ảnh</span>
+        <span className="text-xs font-bold text-[var(--color-muted)]">{numberFormatter.format(group.items.length)} media</span>
       </div>
-      <div role="list" aria-label={`Hình ảnh ${group.title}`} className="grid grid-cols-3 gap-1.5 sm:gap-2">
-        {group.items.map((image) => {
-          const meta = getActivityMeta(image.activityType);
-          const globalIndex = imageIndex.get(`${image.activityId}:${image.imageIndex}`) ?? 0;
-          return <div role="listitem" key={`${image.activityId}:${image.imageIndex}:${image.storageKey}`}>
+      <div role="list" aria-label={`Ảnh và video ${group.title}`} className="grid grid-cols-3 gap-1.5 sm:gap-2">
+        {group.items.map((item) => {
+          const meta = getActivityMeta(item.activityType);
+          const globalIndex = mediaIndex.get(`${item.activityId}:${item.mediaIndex}`) ?? 0;
+          return <div role="listitem" key={`${item.activityId}:${item.mediaIndex}:${item.storageKey}`}>
             <button
               type="button"
               onClick={() => onPreview(globalIndex)}
-              aria-label={`Xem ${image.alt ?? "hình ảnh hoạt động"}`}
-              className={`group/image relative block aspect-square w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-sm transition-opacity active:opacity-80 ${image.imageSyncStatus === "pending" || image.imageSyncStatus === "uploading" ? "opacity-60 motion-safe:animate-pulse" : ""}`}
+              aria-label={`Xem ${item.alt ?? "media hoạt động"}`}
+              className={`group/media relative block aspect-square w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-sm transition-opacity active:opacity-80 ${item.mediaSyncStatus === "pending" || item.mediaSyncStatus === "uploading" ? "opacity-60 motion-safe:animate-pulse" : ""}`}
             >
-              {/* Authenticated Drive URLs and multiple provider hosts are intentionally rendered without the Next image proxy. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image.url} alt={image.alt ?? "Hình ảnh hoạt động"} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.03] motion-reduce:transition-none" />
-              <time className="absolute left-1.5 top-1.5 rounded-lg bg-black/65 px-1.5 py-1 text-[0.62rem] font-extrabold text-white backdrop-blur-sm" dateTime={image.occurredAt}>
-                {shortDateFormatter.format(new Date(image.occurredAt))}
+              <ActivityMediaThumbnail media={item} alt={item.alt ?? "Media hoạt động"} className="transition-transform duration-200 group-hover/media:scale-[1.03] motion-reduce:transition-none" />
+              <time className="absolute left-1.5 top-1.5 rounded-lg bg-black/65 px-1.5 py-1 text-[0.62rem] font-extrabold text-white backdrop-blur-sm" dateTime={item.occurredAt}>
+                {shortDateFormatter.format(new Date(item.occurredAt))}
               </time>
-              {image.description?.trim() ? <span title="Có ghi chú" className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-lg bg-white/90 text-[var(--color-primary-strong)] shadow-sm" aria-hidden="true">
+              {item.description?.trim() ? <span title="Có ghi chú" className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-lg bg-white/90 text-[var(--color-primary-strong)] shadow-sm" aria-hidden="true">
                 <NoteIcon className="h-3.5 w-3.5" />
               </span> : null}
               <span className="sr-only">{meta.label}</span>
@@ -309,7 +308,7 @@ function GalleryTimeline({ activities }: { activities: ActivityDto[] }) {
       <div className="space-y-3">
         {group.items.map((activity) => {
           const meta = getActivityMeta(activity.type);
-          const previewImages = previewImagesForActivity(activity);
+          const previewMedia = previewMediaForActivity(activity);
           return <article key={activity.id} className="surface-card overflow-hidden">
             <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl" style={{ backgroundColor: `${meta.accent}18` }} aria-hidden="true">
@@ -318,7 +317,7 @@ function GalleryTimeline({ activities }: { activities: ActivityDto[] }) {
               <div className="min-w-0 flex-1">
                 <h3 className="truncate text-sm font-black">{meta.label}</h3>
                 <p className="mt-0.5 truncate text-xs font-bold text-[var(--color-muted)]">
-                  <time dateTime={activity.occurredAt}>{formatClock(activity.occurredAt)}</time> · {galleryActivityDetail(activity)} · {activity.images.length} ảnh
+                  <time dateTime={activity.occurredAt}>{formatClock(activity.occurredAt)}</time> · {galleryActivityDetail(activity)} · {activity.media.length} media
                 </p>
               </div>
               <Link href={`/app/activity/${activity.id}?from=gallery`} aria-label={`Xem hoạt động ${meta.label} lúc ${formatClock(activity.occurredAt)}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-2 text-xs font-extrabold text-[var(--color-primary-strong)] transition-colors hover:bg-[var(--color-primary-soft)] active:bg-[var(--color-primary-soft)]">
@@ -327,10 +326,10 @@ function GalleryTimeline({ activities }: { activities: ActivityDto[] }) {
             </div>
             <div className="p-4">
               {activity.note.trim() ? <p className="mb-3 whitespace-pre-wrap text-sm leading-6 text-[var(--color-ink)]">{activity.note}</p> : <p className="mb-3 text-xs italic text-[var(--color-muted)]">Hoạt động này không có ghi chú.</p>}
-              <div className={activity.imageSyncStatus === "pending" || activity.imageSyncStatus === "uploading" ? "opacity-60 motion-safe:animate-pulse" : undefined}>
-                <ActivityImageGallery images={previewImages} maxThumbnails={4} label={`Hình ảnh của ${meta.label} lúc ${formatClock(activity.occurredAt)}`} />
+              <div className={activity.mediaSyncStatus === "pending" || activity.mediaSyncStatus === "uploading" ? "opacity-60 motion-safe:animate-pulse" : undefined}>
+                <ActivityMediaGallery media={previewMedia} maxThumbnails={4} label={`Ảnh và video của ${meta.label} lúc ${formatClock(activity.occurredAt)}`} />
               </div>
-              <div className="mt-3"><ActivityImageSyncNotice activity={activity} compact /></div>
+              <div className="mt-3"><ActivityMediaSyncNotice activity={activity} compact /></div>
             </div>
           </article>;
         })}
@@ -343,17 +342,17 @@ function GalleryEmptyState({ filter, onReset }: { filter: GalleryFilter; onReset
   const label = filter === "all" ? "nhật ký" : getActivityMeta(filter).label.toLocaleLowerCase("vi-VN");
   return <div className="surface-card mt-6 px-6 py-10 text-center">
     <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]" aria-hidden="true"><GalleryIcon className="h-7 w-7" /></span>
-    <h2 className="mt-4 text-lg font-black">Chưa có hình ảnh</h2>
-    <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-[var(--color-muted)]">Chưa tìm thấy ảnh trong {label}. Ảnh sẽ xuất hiện sau khi bạn lưu một hoạt động có hình.</p>
+    <h2 className="mt-4 text-lg font-black">Chưa có ảnh hoặc video</h2>
+    <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-[var(--color-muted)]">Chưa tìm thấy media trong {label}. Ảnh và video sẽ xuất hiện sau khi bạn lưu hoạt động.</p>
     {filter !== "all" ? <button type="button" onClick={onReset} className="mt-4 min-h-11 rounded-xl px-4 text-sm font-extrabold text-[var(--color-primary-strong)] transition-colors hover:bg-[var(--color-primary-soft)] active:bg-[var(--color-primary-soft)]">Xem tất cả hoạt động</button> : null}
   </div>;
 }
 
 function GallerySkeleton({ view }: { view: GalleryView }) {
-  if (view === "timeline") return <div role="status" aria-label="Đang tải dòng thời gian hình ảnh" className="mt-6 space-y-3">
+  if (view === "timeline") return <div role="status" aria-label="Đang tải dòng thời gian media" className="mt-6 space-y-3">
     {[0, 1, 2].map((item) => <div key={item} className="surface-card h-40 animate-pulse bg-[var(--color-border)] motion-reduce:animate-none" />)}
   </div>;
-  return <div role="status" aria-label="Đang tải lưới hình ảnh" className="mt-6 grid grid-cols-3 gap-1.5 sm:gap-2">
+  return <div role="status" aria-label="Đang tải lưới media" className="mt-6 grid grid-cols-3 gap-1.5 sm:gap-2">
     {Array.from({ length: 9 }, (_, index) => <span key={index} className="aspect-square animate-pulse rounded-xl bg-[var(--color-border)] motion-reduce:animate-none" />)}
   </div>;
 }

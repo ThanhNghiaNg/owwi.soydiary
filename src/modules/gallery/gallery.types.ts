@@ -6,7 +6,7 @@ export type GalleryFilter = "all" | ActivityType;
 
 export type GallerySummary = {
   activityCount: number;
-  imageCount: number;
+  mediaCount: number;
 };
 
 export type GalleryPage = {
@@ -15,4 +15,3 @@ export type GalleryPage = {
   syncedAt: string;
   nextCursor?: string;
 };
-

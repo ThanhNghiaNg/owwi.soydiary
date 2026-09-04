@@ -1,6 +1,6 @@
 import { isGoogleDriveAssetUrl } from "@/lib/utils/google-drive-image-url";
 
-export function isSafeImageUrl(value: string) {
+export function isSafeMediaUrl(value: string) {
   const trimmed = value.trim();
   if (trimmed.startsWith("/")) return isGoogleDriveAssetUrl(trimmed);
   try {
@@ -28,3 +28,6 @@ export function isSafeImageUrl(value: string) {
     return false;
   }
 }
+
+/** @deprecated Media URLs use the same SSRF-safe validation rules. */
+export const isSafeImageUrl = isSafeMediaUrl;

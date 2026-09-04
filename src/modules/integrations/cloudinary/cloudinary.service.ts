@@ -914,17 +914,35 @@ function appendSignedParam(body: FormData, key: string, value: unknown) {
   body.append(key, JSON.stringify(value));
 }
 
-async function uploadImageWithSignature(
+function cloudinaryVideoPoster(url: string) {
+  const marker = "/video/upload/";
+  if (!url.includes(marker)) return undefined;
+  return url
+    .replace(marker, `${marker}so_0,f_jpg/`)
+    .replace(/\.[a-z0-9]+(?=\?|#|$)/i, ".jpg");
+}
+
+async function uploadMediaWithSignature(
   credential: SignedUploadCredential,
   file: File,
-): Promise<{ secureUrl: string; publicId: string }> {
+  kind: "image" | "video",
+): Promise<{
+  secureUrl: string;
+  publicId: string;
+  kind: "image" | "video";
+  mimeType: string;
+  posterUrl?: string;
+  durationMs?: number;
+  width?: number;
+  height?: number;
+}> {
   const body = new FormData();
   body.append("file", file, file.name);
   body.append("api_key", credential.apiKey);
   body.append("signature", credential.signature);
   Object.entries(credential.uploadParams).forEach(([key, value]) => appendSignedParam(body, key, value));
 
-  const endpoint = `${normalizeUploadPrefix(credential.host)}/v1_1/${encodeURIComponent(credential.cloudName)}/image/upload`;
+  const endpoint = `${normalizeUploadPrefix(credential.host)}/v1_1/${encodeURIComponent(credential.cloudName)}/${kind}/upload`;
   const response = await fetch(endpoint, {
     method: "POST",
     body,
@@ -933,16 +951,30 @@ async function uploadImageWithSignature(
   const payload = (await response.json().catch(() => ({}))) as {
     secure_url?: string;
     public_id?: string;
+    resource_type?: string;
+    duration?: number;
+    width?: number;
+    height?: number;
     error?: { message?: string };
   };
-  if (!response.ok || !payload.secure_url || !payload.public_id) {
-    console.error("Cloudinary signed image upload failed", {
+  if (!response.ok || !payload.secure_url || !payload.public_id || payload.resource_type !== kind) {
+    console.error("Cloudinary signed media upload failed", {
       status: response.status,
       message: payload.error?.message,
     });
     throw new Error("CLOUDINARY_UPLOAD_FAILED");
   }
-  return { secureUrl: payload.secure_url, publicId: payload.public_id };
+  const posterUrl = kind === "video" ? cloudinaryVideoPoster(payload.secure_url) : undefined;
+  return {
+    secureUrl: payload.secure_url,
+    publicId: payload.public_id,
+    kind,
+    mimeType: file.type,
+    ...(posterUrl ? { posterUrl } : {}),
+    ...(typeof payload.duration === "number" ? { durationMs: Math.round(payload.duration * 1000) } : {}),
+    ...(typeof payload.width === "number" ? { width: payload.width } : {}),
+    ...(typeof payload.height === "number" ? { height: payload.height } : {}),
+  };
 }
 
 async function signChunk(
@@ -967,14 +999,14 @@ async function signChunk(
   }
 }
 
-export async function uploadImagesToCloudinary(
+export async function uploadMediaToCloudinary(
   userId: string,
-  entries: Array<{ key: string; file: File }>,
+  entries: Array<{ key: string; file: File; kind: "image" | "video" }>,
   folder: string,
 ) {
   let access = await getValidCloudinaryAccess(userId);
   const results: Array<
-    | { key: string; ok: true; secureUrl: string; publicId: string }
+    | { key: string; ok: true; secureUrl: string; publicId: string; kind: "image" | "video"; mimeType: string; posterUrl?: string; durationMs?: number; width?: number; height?: number }
     | { key: string; ok: false; error: string }
   > = [];
   const concurrency = 6;
@@ -985,11 +1017,11 @@ export async function uploadImagesToCloudinary(
       const signed = await signChunk(userId, access, chunk.map(({ key }) => key), folder);
       access = signed.access;
       const chunkResults = await Promise.all(
-        chunk.map(async ({ key, file }, index) => {
+        chunk.map(async ({ key, file, kind }, index) => {
           try {
             const credential = signed.credentials[index];
             if (!credential) throw new Error("CLOUDINARY_UPLOAD_FAILED");
-            const uploaded = await uploadImageWithSignature(credential, file);
+            const uploaded = await uploadMediaWithSignature(credential, file, kind);
             return { key, ok: true as const, ...uploaded };
           } catch (error) {
             return {

@@ -557,7 +557,7 @@ function safeFileName(file: File, uploadKey: string) {
     file.name
       .replace(/[\\/\0]/g, "-")
       .trim()
-      .slice(0, 160) || "image";
+      .slice(0, 160) || "media";
   return `${uploadKey}-${original}`;
 }
 
@@ -567,7 +567,7 @@ async function deleteDriveFile(accessToken: string, fileId: string) {
   }).catch(() => undefined);
 }
 
-async function findUploadedImage(
+async function findUploadedMedia(
   accessToken: string,
   folderId: string,
   uploadKey: string,
@@ -584,18 +584,21 @@ async function findUploadedImage(
   return payload.files?.[0]?.id;
 }
 
-async function uploadImage(
+async function uploadMedia(
   accessToken: string,
   file: File,
   folderId: string,
   uploadKey: string,
   connectionId: string,
-): Promise<{ secureUrl: string; publicId: string }> {
-  const existingFileId = await findUploadedImage(accessToken, folderId, uploadKey);
+  kind: "image" | "video",
+): Promise<{ secureUrl: string; publicId: string; kind: "image" | "video"; mimeType: string }> {
+  const existingFileId = await findUploadedMedia(accessToken, folderId, uploadKey);
   if (existingFileId) {
     return {
       secureUrl: googleDriveAssetPath(connectionId, existingFileId),
       publicId: existingFileId,
+      kind,
+      mimeType: file.type,
     };
   }
   const boundary = `soydiary_${randomBytes(12).toString("hex")}`;
@@ -604,7 +607,7 @@ async function uploadImage(
     parents: [folderId],
     appProperties: {
       soydiaryManaged: "true",
-      soydiaryAssetType: "image",
+      soydiaryAssetType: kind,
       soydiaryUploadKey: uploadKey,
     },
   };
@@ -630,13 +633,14 @@ async function uploadImage(
   if (!response.ok || !uploaded.id) throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
 
   const secureUrl = googleDriveAssetPath(connectionId, uploaded.id);
-  return { secureUrl, publicId: uploaded.id };
+  return { secureUrl, publicId: uploaded.id, kind, mimeType: file.type };
 }
 
-export async function downloadGoogleDriveImage(
+export async function downloadGoogleDriveMedia(
   userId: string,
   connectionId: string,
   fileId: string,
+  range?: string,
 ) {
   await ensureGoogleDriveStorageReady();
   const otherConnections = await GoogleDriveConnectionModel.find({ userId })
@@ -654,10 +658,15 @@ export async function downloadGoogleDriveImage(
         driveFetch(
           accessToken,
           `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
-          { headers: { accept: "image/avif,image/webp,image/apng,image/*" } },
+          {
+            headers: {
+              accept: "image/avif,image/webp,image/apng,image/*,video/mp4,video/webm,video/quicktime,video/*",
+              ...(range ? { range } : {}),
+            },
+          },
         ),
       );
-      if (response.ok) return response;
+      if (response.ok || response.status === 416) return response;
       if (response.status !== 404) throw new Error("GOOGLE_DRIVE_UPLOAD_FAILED");
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
@@ -667,16 +676,16 @@ export async function downloadGoogleDriveImage(
   throw new Error("NOT_FOUND");
 }
 
-export async function uploadImagesToGoogleDrive(
+export async function uploadMediaToGoogleDrive(
   userId: string,
-  entries: Array<{ key: string; file: File }>,
+  entries: Array<{ key: string; file: File; kind: "image" | "video" }>,
   folder: string,
 ) {
   const access = await getActiveGoogleDriveAccess(userId);
   return withRefreshedAccess(userId, access, async (accessToken) => {
     const folderId = await ensureFolderPath(userId, access.connectionId, accessToken, folder);
     const results: Array<
-      | { key: string; ok: true; secureUrl: string; publicId: string }
+      | { key: string; ok: true; secureUrl: string; publicId: string; kind: "image" | "video"; mimeType: string }
       | { key: string; ok: false; error: string }
     > = [];
     const concurrency = 3;
@@ -685,12 +694,12 @@ export async function uploadImagesToGoogleDrive(
       const chunk = entries.slice(offset, offset + concurrency);
       results.push(
         ...(await Promise.all(
-          chunk.map(async ({ key, file }) => {
+          chunk.map(async ({ key, file, kind }) => {
             try {
               return {
                 key,
                 ok: true as const,
-                ...(await uploadImage(accessToken, file, folderId, key, access.connectionId)),
+                ...(await uploadMedia(accessToken, file, folderId, key, access.connectionId, kind)),
               };
             } catch (error) {
               if (error instanceof Error && error.message === "GOOGLE_DRIVE_RECONNECT_REQUIRED") {

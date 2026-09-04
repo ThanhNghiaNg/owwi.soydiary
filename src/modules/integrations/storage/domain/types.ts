@@ -1,6 +1,7 @@
 export const storageProviderIds = ["cloudinary", "google-drive"] as const;
 
 export type StorageProviderId = (typeof storageProviderIds)[number];
+export type StorageMediaKind = "image" | "video";
 export type StorageConnectionHealth = "connected" | "reconnect-required";
 
 export type StorageUsageSummary = {
@@ -41,7 +42,13 @@ export type StorageUploadResult =
       ok: true;
       secureUrl: string;
       publicId: string;
+      kind: StorageMediaKind;
+      mimeType: string;
       provider?: StorageProviderId;
       connectionId?: string;
+      posterUrl?: string;
+      durationMs?: number;
+      width?: number;
+      height?: number;
     }
   | { key: string; ok: false; error: string };

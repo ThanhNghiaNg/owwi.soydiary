@@ -5,7 +5,7 @@ import {
   disconnectCloudinaryConnection,
   getCloudinaryConnectionUsage,
   listCloudinaryConnections,
-  uploadImagesToCloudinary,
+  uploadMediaToCloudinary,
 } from "@/modules/integrations/cloudinary/cloudinary.service";
 import {
   activateGoogleDriveConnection,
@@ -13,12 +13,13 @@ import {
   disconnectGoogleDriveConnection,
   getGoogleDriveConnectionUsage,
   listGoogleDriveConnections,
-  uploadImagesToGoogleDrive,
+  uploadMediaToGoogleDrive,
 } from "@/modules/integrations/google-drive/google-drive.service";
 import type {
   StorageConnectionSummary,
   StorageProviderId,
   StorageProviderSummary,
+  StorageMediaKind,
   StorageSettingsSummary,
   StorageUploadResult,
   StorageUsageSummary,
@@ -33,9 +34,9 @@ type StorageProviderAdapter = {
   deactivateAll: (userId: string) => Promise<void>;
   disconnectConnection: (userId: string, connectionId: string) => Promise<{ wasActive: boolean }>;
   getConnectionUsage: (userId: string, connectionId: string) => Promise<StorageUsageSummary>;
-  uploadImages: (
+  uploadMedia: (
     userId: string,
-    entries: Array<{ key: string; file: File }>,
+    entries: Array<{ key: string; file: File; kind: StorageMediaKind }>,
     folder: string,
   ) => Promise<StorageUploadResult[]>;
 };
@@ -49,7 +50,7 @@ const providerAdapters: Record<StorageProviderId, StorageProviderAdapter> = {
     deactivateAll: deactivateAllCloudinaryConnections,
     disconnectConnection: disconnectCloudinaryConnection,
     getConnectionUsage: getCloudinaryConnectionUsage,
-    uploadImages: uploadImagesToCloudinary,
+    uploadMedia: uploadMediaToCloudinary,
   },
   "google-drive": {
     id: "google-drive",
@@ -59,7 +60,7 @@ const providerAdapters: Record<StorageProviderId, StorageProviderAdapter> = {
     deactivateAll: deactivateAllGoogleDriveConnections,
     disconnectConnection: disconnectGoogleDriveConnection,
     getConnectionUsage: getGoogleDriveConnectionUsage,
-    uploadImages: uploadImagesToGoogleDrive,
+    uploadMedia: uploadMediaToGoogleDrive,
   },
 };
 
@@ -191,9 +192,9 @@ function normalizeStorageError(error: unknown) {
   return "STORAGE_UPLOAD_FAILED";
 }
 
-export async function uploadImagesToActiveStorage(
+export async function uploadMediaToActiveStorage(
   userId: string,
-  entries: Array<{ key: string; file: File }>,
+  entries: Array<{ key: string; file: File; kind: StorageMediaKind }>,
   folder: string,
 ): Promise<StorageUploadResult[]> {
   const settings = await getStorageSettings(userId);
@@ -213,7 +214,7 @@ export async function uploadImagesToActiveStorage(
   const { connectionId } = parseStorageConnectionId(active.id);
 
   try {
-    const results = await adapter.uploadImages(userId, entries, folder);
+    const results = await adapter.uploadMedia(userId, entries, folder);
     return results.map((result) => result.ok
       ? { ...result, provider: active.provider, connectionId }
       : { ...result, error: normalizeStorageError(new Error(result.error)) });

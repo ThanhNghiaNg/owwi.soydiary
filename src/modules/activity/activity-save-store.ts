@@ -1,8 +1,9 @@
 import {
-  isPersistedActivitySaveDraft,
+  normalizePersistedActivitySaveDraft,
   type PersistedActivitySaveDraft,
 } from "./activity-save-draft";
 
+// Keep the original database name so version 2 image jobs can be migrated.
 const DATABASE_NAME = "soydiary:activity-image-sync-queue";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "drafts";
@@ -46,5 +47,8 @@ export async function deleteActivitySaveDraft(id: string) {
 
 export async function listActivitySaveDrafts() {
   const records = await transactStore<unknown[]>("readonly", (store) => store.getAll());
-  return records.filter(isPersistedActivitySaveDraft);
+  return records.flatMap((record) => {
+    const normalized = normalizePersistedActivitySaveDraft(record);
+    return normalized ? [normalized] : [];
+  });
 }

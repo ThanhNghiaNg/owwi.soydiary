@@ -23,6 +23,8 @@ const knownErrors: Record<string, number> = {
   STORAGE_USAGE_FAILED: 502,
   IMAGE_PAYLOAD_TOO_LARGE: 413,
   UNSUPPORTED_IMAGE: 400,
+  MEDIA_PAYLOAD_TOO_LARGE: 413,
+  UNSUPPORTED_MEDIA: 415,
 };
 
 export function apiError(error: unknown) {

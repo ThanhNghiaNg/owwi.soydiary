@@ -174,7 +174,7 @@ export function buildHistorySummary(activities: ActivityDto[], range: HistoryRan
   if (moments.length) sections.push({ key: "moment", title: "Khoảnh khắc", accent: getActivityMeta("moment").accent, rows: [
     { label: "Khoảnh khắc gần nhất", value: lastTime(moments) },
     { label: "Tổng số khoảnh khắc", value: countText(moments.length, days) },
-    { label: "Tổng số hình ảnh", value: String(moments.reduce((total, item) => total + item.images.length, 0)), divider: true },
+    { label: "Tổng số media", value: String(moments.reduce((total, item) => total + item.media.length, 0)), divider: true },
   ] });
   if (custom.length) sections.push({ key: "custom", title: "Hoạt động khác", accent: getActivityMeta("custom").accent, rows: [
     { label: "Lần gần nhất", value: lastTime(custom) }, { label: "Tổng số lần", value: countText(custom.length, days) },

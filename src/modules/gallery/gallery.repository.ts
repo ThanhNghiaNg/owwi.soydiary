@@ -26,7 +26,10 @@ function galleryFilter(ownerId: string, babyId: string, type?: ActivityType): Fi
     ownerId,
     babyId: new ObjectId(babyId),
     ...(type ? { type } : {}),
-    "images.0": { $exists: true },
+    $or: [
+      { "media.0": { $exists: true } },
+      { media: { $exists: false }, "images.0": { $exists: true } },
+    ],
   } as Filter<ActivityDocument>;
 }
 
@@ -45,13 +48,23 @@ export async function listGalleryActivities(query: GalleryQuery): Promise<Galler
 
   const [pageDocuments, summaryDocument] = await Promise.all([
     col.find(pageFilter).sort({ occurredAt: -1, _id: -1 }).limit(query.limit + 1).toArray(),
-    col.aggregate<{ _id: null; activityCount: number; imageCount: number }>([
+    col.aggregate<{ _id: null; activityCount: number; mediaCount: number }>([
       { $match: baseFilter },
       {
         $group: {
           _id: null,
           activityCount: { $sum: 1 },
-          imageCount: { $sum: { $size: "$images" } },
+          mediaCount: {
+            $sum: {
+              $size: {
+                $cond: [
+                  { $isArray: "$media" },
+                  "$media",
+                  { $ifNull: ["$images", []] },
+                ],
+              },
+            },
+          },
         },
       },
     ]).next(),
@@ -61,8 +74,8 @@ export async function listGalleryActivities(query: GalleryQuery): Promise<Galler
   return {
     activities: hasMore ? pageDocuments.slice(0, query.limit) : pageDocuments,
     summary: summaryDocument
-      ? { activityCount: summaryDocument.activityCount, imageCount: summaryDocument.imageCount }
-      : { activityCount: 0, imageCount: 0 },
+      ? { activityCount: summaryDocument.activityCount, mediaCount: summaryDocument.mediaCount }
+      : { activityCount: 0, mediaCount: 0 },
     hasMore,
   };
 }

@@ -2,7 +2,7 @@ import { ObjectId, type Filter } from "mongodb";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/mongodb";
 import type { ActivityDocument } from "./activity.model";
-import type { ActivityImageSyncStatus, ActivityInput, ActivityType } from "./activity.dto";
+import type { ActivityInput, ActivityMediaSyncStatus, ActivityType } from "./activity.dto";
 
 const collection = async () => (await db()).collection<ActivityDocument>("activities");
 
@@ -76,29 +76,32 @@ export async function getActivityById(ownerId: string, babyId: string, activityI
   return (await collection()).findOne({ _id: new ObjectId(activityId), ownerId, babyId: new ObjectId(babyId) });
 }
 
-export async function updateActivity(ownerId: string, babyId: string, activityId: string, input: ActivityInput, preserveImages = false) {
+export async function updateActivity(ownerId: string, babyId: string, activityId: string, input: ActivityInput, preserveMedia = false) {
   if (!ObjectId.isValid(activityId)) return null;
   const updateFields = { ...input } as Partial<ActivityInput>;
-  if (preserveImages) {
-    delete updateFields.images;
-    delete updateFields.imageSyncStatus;
-    delete updateFields.imageSyncExpectedCount;
+  if (preserveMedia) {
+    delete updateFields.media;
+    delete updateFields.mediaSyncStatus;
+    delete updateFields.mediaSyncExpectedCount;
   }
   return (await collection()).findOneAndUpdate(
     { _id: new ObjectId(activityId), ownerId, babyId: new ObjectId(babyId) },
-    { $set: { ...updateFields, updatedAt: new Date() } },
+    {
+      $set: { ...updateFields, updatedAt: new Date() },
+      ...(!preserveMedia ? { $unset: { images: "", imageSyncStatus: "", imageSyncExpectedCount: "" } } : {}),
+    },
     { returnDocument: "after" },
   );
 }
 
-export async function updateActivityImageSync(
+export async function updateActivityMediaSync(
   ownerId: string,
   babyId: string,
   activityId: string,
   update: {
-    status: ActivityImageSyncStatus;
+    status: ActivityMediaSyncStatus;
     expectedCount: number;
-    images?: ActivityInput["images"];
+    media?: ActivityInput["media"];
   },
 ) {
   if (!ObjectId.isValid(activityId)) return null;
@@ -106,11 +109,12 @@ export async function updateActivityImageSync(
     { _id: new ObjectId(activityId), ownerId, babyId: new ObjectId(babyId) },
     {
       $set: {
-        imageSyncStatus: update.status,
-        imageSyncExpectedCount: update.expectedCount,
-        ...(update.images ? { images: update.images } : {}),
+        mediaSyncStatus: update.status,
+        mediaSyncExpectedCount: update.expectedCount,
+        ...(update.media ? { media: update.media } : {}),
         updatedAt: new Date(),
       },
+      $unset: { images: "", imageSyncStatus: "", imageSyncExpectedCount: "" },
     },
     { returnDocument: "after" },
   );

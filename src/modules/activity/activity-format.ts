@@ -32,7 +32,7 @@ export function activityDetail(activity: ActivityDto) {
     case "moment": {
       const details = [
         activity.note.trim() ? "Có mô tả" : "",
-        activity.images.length ? `${activity.images.length} ảnh` : "",
+        activity.media.length ? `${activity.media.length} media` : "",
       ].filter(Boolean);
       return details.join(" · ") || "Khoảnh khắc";
     }

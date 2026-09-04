@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
   if (!baby?._id) {
     const emptyPage: GalleryPage = {
       activities: [],
-      summary: { activityCount: 0, imageCount: 0 },
+      summary: { activityCount: 0, mediaCount: 0 },
       syncedAt: new Date().toISOString(),
     };
     return NextResponse.json(emptyPage, { headers: privateNoStore });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getBabyByOwner } from "@/modules/baby/baby.repository";
-import { activityInputSchema, type ActivityType } from "@/modules/activity/activity.dto";
+import { activityInputSchema, normalizeLegacyActivityPayload, type ActivityType } from "@/modules/activity/activity.dto";
 import { createActivity, listActivities } from "@/modules/activity/activity.repository";
 import { toActivityDto } from "@/modules/activity/activity.mapper";
 
@@ -31,12 +31,13 @@ export async function POST(request: Request) {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const baby = await getBabyByOwner(session.user.id);
   if (!baby?._id) return NextResponse.json({ error: "Onboarding required" }, { status: 409 });
-  const body: unknown = await request.json();
+  const rawBody: unknown = await request.json();
+  const body = normalizeLegacyActivityPayload(rawBody);
   const parsed = activityInputSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const rawMutationId = body && typeof body === "object" && "clientMutationId" in body ? (body as { clientMutationId?: unknown }).clientMutationId : undefined;
+  const rawMutationId = rawBody && typeof rawBody === "object" && "clientMutationId" in rawBody ? (rawBody as { clientMutationId?: unknown }).clientMutationId : undefined;
   const clientMutationId = typeof rawMutationId === "string" && rawMutationId.length >= 8 && rawMutationId.length <= 200 ? rawMutationId : undefined;
-  const preserveExistingOnRetry = Boolean(body && typeof body === "object" && "preserveExistingOnRetry" in body && (body as { preserveExistingOnRetry?: unknown }).preserveExistingOnRetry === true);
+  const preserveExistingOnRetry = Boolean(rawBody && typeof rawBody === "object" && "preserveExistingOnRetry" in rawBody && (rawBody as { preserveExistingOnRetry?: unknown }).preserveExistingOnRetry === true);
   if (parsed.data.type === "sleep" && new Date(parsed.data.endedAt) < new Date(parsed.data.occurredAt)) {
     return NextResponse.json({ error: "Wake time must be after sleep time" }, { status: 400 });
   }

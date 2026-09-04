@@ -6,12 +6,12 @@ import { useSWRConfig } from "swr";
 import { showToast } from "@/components/toast";
 import { upsertActivityCaches } from "@/lib/swr";
 import type { ActivityDto } from "./activity.dto";
-import { ActivityImageUploadError, uploadPendingActivityImages } from "./activity-images";
+import { ActivityMediaUploadError, uploadPendingActivityMedia } from "./activity-media-upload";
 import {
   activityMetadataPayload,
   describeActivitySaveFailure,
-  durableActivityImages,
-  pendingActivityImageCount,
+  durableActivityMedia,
+  pendingActivityMediaCount,
   persistActivitySaveDraft,
   workerDraftFromPersisted,
   type ActivitySaveDraft,
@@ -26,18 +26,19 @@ import {
   saveActivitySaveDraft,
 } from "./activity-save-store";
 
-export type ActivityImageJobView = {
+export type ActivityMediaJobView = {
   status: ActivitySaveJobStatus;
   pendingCount: number;
   expectedCount: number;
+  kinds: Array<"image" | "video">;
   failure?: ActivitySaveFailure;
 };
 
 type ActivitySaveQueueValue = {
-  saveActivityWithImages: (draft: ActivitySaveDraft) => Promise<ActivityDto>;
-  retryActivityImages: (activityId: string) => void;
-  cancelActivityImageSync: (activityId: string) => void;
-  imageJobs: Readonly<Record<string, ActivityImageJobView>>;
+  saveActivityWithMedia: (draft: ActivitySaveDraft) => Promise<ActivityDto>;
+  retryActivityMedia: (activityId: string) => void;
+  cancelActivityMediaSync: (activityId: string) => void;
+  mediaJobs: Readonly<Record<string, ActivityMediaJobView>>;
   recoveryReady: boolean;
 };
 
@@ -75,20 +76,20 @@ function activityMetadataRequest(draft: ActivitySaveDraft) {
   });
 }
 
-function activityImageSyncRequest(
+function activityMediaSyncRequest(
   activityId: string,
   status: "uploading" | "failed" | "synced",
   expectedCount: number,
-  images?: ActivitySaveDraft["input"]["images"],
+  media?: ActivitySaveDraft["input"]["media"],
 ) {
   return fetch(`/api/activities/${activityId}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      imageSync: {
+      mediaSync: {
         status,
         expectedCount,
-        ...(images ? { images } : {}),
+        ...(media ? { media } : {}),
       },
     }),
   });
@@ -99,24 +100,25 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
   const { cache, mutate } = useSWRConfig();
   const jobsRef = useRef(new Map<string, QueuedJob>());
   const runningRef = useRef(new Set<string>());
-  const [imageJobs, setImageJobs] = useState<Record<string, ActivityImageJobView>>({});
+  const [mediaJobs, setMediaJobs] = useState<Record<string, ActivityMediaJobView>>({});
   const [recoveryReady, setRecoveryReady] = useState(false);
 
   const publishJob = useCallback((draft: ActivitySaveDraft, status: ActivitySaveJobStatus, failure?: ActivitySaveFailure) => {
     if (!draft.activityId) return;
-    setImageJobs((current) => ({
+    setMediaJobs((current) => ({
       ...current,
       [draft.activityId!]: {
         status,
-        pendingCount: pendingActivityImageCount(draft.images),
-        expectedCount: draft.images.length,
+        pendingCount: pendingActivityMediaCount(draft.media),
+        expectedCount: draft.media.length,
+        kinds: draft.media.map((item) => item.kind),
         ...(failure ? { failure } : {}),
       },
     }));
   }, []);
 
   const clearPublishedJob = useCallback((activityId: string) => {
-    setImageJobs((current) => {
+    setMediaJobs((current) => {
       if (!(activityId in current)) return current;
       const next = { ...current };
       delete next[activityId];
@@ -150,7 +152,7 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
       if (phase === "upload") {
         publishJob(draft, "uploading");
         await saveActivitySaveDraft(persistActivitySaveDraft(draft, phase, "uploading")).catch(() => undefined);
-        const statusResponse = await activityImageSyncRequest(activityId, "uploading", draft.images.length);
+        const statusResponse = await activityMediaSyncRequest(activityId, "uploading", draft.media.length);
         if (statusResponse.status === 404) throw new ActivityRequestError("ACTIVITY_NOT_FOUND", 404);
         if (statusResponse.ok) {
           const statusResult = await statusResponse.json() as { activity: ActivityDto };
@@ -158,9 +160,9 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
         }
         if (!isCurrent()) return;
 
-        const uploadedImages = await uploadPendingActivityImages(draft.images, draft.uploadFolderKey);
+        const uploadedMedia = await uploadPendingActivityMedia(draft.media, draft.uploadFolderKey);
         if (!isCurrent()) return;
-        draft = { ...draft, images: uploadedImages };
+        draft = { ...draft, media: uploadedMedia };
         phase = "sync";
         const syncingJob: QueuedJob = { ...job, draft, phase };
         jobsRef.current.set(draft.id, syncingJob);
@@ -168,13 +170,13 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
         if (!isCurrent()) return;
       }
 
-      const response = await activityImageSyncRequest(
+      const response = await activityMediaSyncRequest(
         activityId,
         "synced",
-        draft.images.length,
-        durableActivityImages(draft.images),
+        draft.media.length,
+        durableActivityMedia(draft.media),
       );
-      const result = await parseActivityResponse(response, "ACTIVITY_IMAGE_SYNC_FAILED");
+      const result = await parseActivityResponse(response, "ACTIVITY_MEDIA_SYNC_FAILED");
       if (!isCurrent()) return;
       await cacheActivity(result.activity).catch(() => undefined);
       await removeJob({ ...job, draft, phase });
@@ -185,9 +187,9 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
         await removeJob({ ...job, draft, phase });
         return;
       }
-      if (error instanceof ActivityImageUploadError) {
-        draft = { ...draft, images: error.images };
-        phase = pendingActivityImageCount(draft.images) ? "upload" : "sync";
+      if (error instanceof ActivityMediaUploadError) {
+        draft = { ...draft, media: error.media };
+        phase = pendingActivityMediaCount(draft.media) ? "upload" : "sync";
       }
       const failure = describeActivitySaveFailure(error);
       const failedJob: QueuedJob = { ...job, draft, phase };
@@ -196,11 +198,11 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
       await saveActivitySaveDraft(persistActivitySaveDraft(draft, phase, "failed", failure)).catch(() => undefined);
 
       try {
-        const failedResponse = await activityImageSyncRequest(
+        const failedResponse = await activityMediaSyncRequest(
           activityId,
           "failed",
-          draft.images.length,
-          durableActivityImages(draft.images),
+          draft.media.length,
+          durableActivityMedia(draft.media),
         );
         if (failedResponse.status === 404) {
           await removeJob(failedJob);
@@ -217,7 +219,7 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
 
       showToast({
         tone: "error",
-        message: `${failure.message} Hoạt động đã được lưu và ảnh vẫn được giữ trên thiết bị.`,
+        message: `${failure.message} Hoạt động đã được lưu và media vẫn được giữ trên thiết bị.`,
         duration: 8000,
         action: { label: "Xem", onClick: () => router.push(`/app/activity/${activityId}`) },
       });
@@ -234,13 +236,13 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
     void run(job);
   }, [publishJob, run]);
 
-  const saveActivityWithImages = useCallback(async (draft: ActivitySaveDraft) => {
-    const hasPendingImages = pendingActivityImageCount(draft.images) > 0;
-    if (hasPendingImages) {
+  const saveActivityWithMedia = useCallback(async (draft: ActivitySaveDraft) => {
+    const hasPendingMedia = pendingActivityMediaCount(draft.media) > 0;
+    if (hasPendingMedia) {
       try {
         await saveActivitySaveDraft(persistActivitySaveDraft(draft, "activity", "pending"));
       } catch {
-        throw new Error("IMAGE_QUEUE_UNAVAILABLE");
+        throw new Error("MEDIA_QUEUE_UNAVAILABLE");
       }
     }
 
@@ -250,26 +252,26 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
       const result = await parseActivityResponse(response, "ACTIVITY_SAVE_FAILED");
       await cacheActivity(result.activity).catch(() => undefined);
 
-      if (hasPendingImages) {
+      if (hasPendingMedia) {
         const queuedDraft: ActivitySaveDraft = {
           ...draft,
           activityId: result.activity.id,
           uploadFolderKey: draft.activityId ?? result.activity.id,
-          preserveImageSync: false,
+          preserveMediaSync: false,
         };
         await registerAndRun(queuedDraft, "upload");
-      } else if (!draft.preserveImageSync) {
+      } else if (!draft.preserveMediaSync) {
         const obsoleteJob = [...jobsRef.current.values()].find((job) => job.draft.activityId === result.activity.id);
         if (obsoleteJob) await removeJob(obsoleteJob);
       }
       return result.activity;
     } catch (error) {
-      if (hasPendingImages) await deleteActivitySaveDraft(draft.id).catch(() => undefined);
+      if (hasPendingMedia) await deleteActivitySaveDraft(draft.id).catch(() => undefined);
       throw error;
     }
   }, [cacheActivity, registerAndRun, removeJob]);
 
-  const retryActivityImages = useCallback((activityId: string) => {
+  const retryActivityMedia = useCallback((activityId: string) => {
     const job = [...jobsRef.current.values()].find((candidate) => candidate.draft.activityId === activityId);
     if (!job || runningRef.current.has(job.draft.id)) return;
     const retryJob: QueuedJob = { ...job, token: crypto.randomUUID() };
@@ -278,7 +280,7 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
     void run(retryJob);
   }, [publishJob, run]);
 
-  const cancelActivityImageSync = useCallback((activityId: string) => {
+  const cancelActivityMediaSync = useCallback((activityId: string) => {
     const jobs = [...jobsRef.current.values()].filter((job) => job.draft.activityId === activityId);
     jobs.forEach((job) => {
       jobsRef.current.delete(job.draft.id);
@@ -314,7 +316,7 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
               ...draft,
               activityId: result.activity.id,
               uploadFolderKey: draft.activityId ?? result.activity.id,
-              preserveImageSync: false,
+              preserveMediaSync: false,
             };
             await registerAndRun(draft, "upload", "pending");
           } catch (error) {
@@ -334,12 +336,12 @@ export function ActivitySaveQueueProvider({ babyId, children }: { babyId: string
   }, [babyId, cacheActivity, registerAndRun]);
 
   const value = useMemo<ActivitySaveQueueValue>(() => ({
-    saveActivityWithImages,
-    retryActivityImages,
-    cancelActivityImageSync,
-    imageJobs,
+    saveActivityWithMedia,
+    retryActivityMedia,
+    cancelActivityMediaSync,
+    mediaJobs,
     recoveryReady,
-  }), [cancelActivityImageSync, imageJobs, recoveryReady, retryActivityImages, saveActivityWithImages]);
+  }), [cancelActivityMediaSync, mediaJobs, recoveryReady, retryActivityMedia, saveActivityWithMedia]);
 
   return <ActivitySaveQueueContext.Provider value={value}>{children}</ActivitySaveQueueContext.Provider>;
 }

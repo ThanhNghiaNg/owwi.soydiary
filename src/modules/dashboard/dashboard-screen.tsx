@@ -7,7 +7,6 @@ import { ACTIVITIES_KEY, type ActivitiesResponse } from "@/lib/swr";
 import { getActivityMeta } from "@/modules/activity/activity.registry";
 import {
   aggregateDashboard,
-  dashboardRangeToIso,
   DASHBOARD_PRESETS,
   filterActivitiesForRange,
   makeDashboardRange,
@@ -15,6 +14,7 @@ import {
   type DashboardPreset,
 } from "./dashboard";
 import { DashboardChart } from "./charts";
+import { ActivityTimelineChart, timelineEndIso, timelineStartIso, type TimelineDayCount } from "./timeline-chart";
 
 const numberFormatter = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 });
 const emptyActivities: ActivitiesResponse["activities"] = [];
@@ -42,21 +42,36 @@ function formatValue(value: number) {
 
 export function DashboardScreen() {
   const [preset, setPreset] = useState<DashboardPreset>("7-days");
+  const [timelineDays, setTimelineDays] = useState<TimelineDayCount>(7);
   const range = useMemo(() => makeDashboardRange(preset), [preset]);
   const { data: cachedResponse } = useSWR<ActivitiesResponse>(ACTIVITIES_KEY);
   const cachedActivities = cachedResponse?.activities ?? emptyActivities;
-  const fallbackActivities = useMemo(() => filterActivitiesForRange(cachedActivities, range), [cachedActivities, range]);
+  const timelineFrom = useMemo(() => timelineStartIso(timelineDays), [timelineDays]);
+  const timelineTo = useMemo(() => timelineEndIso(), []);
+  const timelineQueryStart = useMemo(() => {
+    const date = new Date(timelineFrom);
+    date.setDate(date.getDate() - 1);
+    return date;
+  }, [timelineFrom]);
+  const requestStart = useMemo(() => new Date(Math.min(range.start.getTime(), timelineQueryStart.getTime())), [range.start, timelineQueryStart]);
+  const requestEnd = useMemo(() => new Date(Math.max(range.end.getTime(), new Date(timelineTo).getTime())), [range.end, timelineTo]);
+  const fallbackActivities = useMemo(() => cachedActivities.filter((activity) => {
+    const occurredAt = new Date(activity.occurredAt).getTime();
+    return occurredAt >= requestStart.getTime() && occurredAt <= requestEnd.getTime();
+  }), [cachedActivities, requestEnd, requestStart]);
   const activitiesKey = useMemo(() => {
-    const { from, to } = dashboardRangeToIso(range);
+    const from = requestStart.toISOString();
+    const to = requestEnd.toISOString();
     return `/api/activities?${new URLSearchParams({ from, to, limit: "5000" })}`;
-  }, [range]);
+  }, [requestEnd, requestStart]);
   const fallbackData = useMemo<ActivitiesResponse>(() => ({ activities: fallbackActivities }), [fallbackActivities]);
   const { data: response, error, isValidating, mutate } = useSWR<ActivitiesResponse>(activitiesKey, {
     fallbackData,
     revalidateOnMount: true,
   });
   const activities = response?.activities ?? fallbackActivities;
-  const data = useMemo(() => aggregateDashboard(activities, range), [activities, range]);
+  const rangeActivities = useMemo(() => filterActivitiesForRange(activities, range), [activities, range]);
+  const data = useMemo(() => aggregateDashboard(rangeActivities, range), [rangeActivities, range]);
 
   return <div className="app-page overscroll-contain">
     <TopHeader title="Thống kê" subtitle={`Tổng quan ${range.label.toLocaleLowerCase("vi-VN")}`} />
@@ -87,7 +102,7 @@ export function DashboardScreen() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-bold text-[var(--color-primary-strong)]">Nhật ký của bé</p>
-            <h2 id="dashboard-overview-title" className="mt-1 text-3xl font-black tabular-nums tracking-tight">{activities.length}</h2>
+            <h2 id="dashboard-overview-title" className="mt-1 text-3xl font-black tabular-nums tracking-tight">{rangeActivities.length}</h2>
             <p className="mt-0.5 text-sm font-medium text-[var(--color-muted)]">hoạt động đã ghi</p>
           </div>
           <span className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-[var(--color-primary-strong)]">{range.compactLabel}</span>
@@ -97,6 +112,8 @@ export function DashboardScreen() {
           <span className="text-right">{range.chartLabel}</span>
         </div>
       </section>
+
+      <ActivityTimelineChart activities={activities} dayCount={timelineDays} onDayCountChange={setTimelineDays} />
 
       {error ? <div role="alert" className="mt-4 flex items-center gap-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-[var(--color-danger)]"><p className="min-w-0 flex-1">Chưa thể cập nhật số liệu mới nhất.</p><button onClick={() => { void mutate(); }} className="min-h-11 shrink-0 rounded-xl bg-white px-3 font-extrabold shadow-sm">Thử lại</button></div> : null}
 

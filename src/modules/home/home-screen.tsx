@@ -13,7 +13,7 @@ import { ProfileMenu } from "@/components/profile-menu";
 import { useInitialAppData } from "@/components/data-cache-provider";
 
 const homeQuickActivityOrder = [
-  "breastfeeding", "bottle", "diaper", "moment", "pump", "solid", "tummy", "custom",
+  "breastfeeding", "bottle", "diaper", "moment", "pump", "solid", "tummy", "sleep",
 ] as const satisfies readonly ActivityType[];
 const homeQuickActivities = homeQuickActivityOrder.map(getActivityMeta);
 

@@ -97,13 +97,14 @@ export function ActivityMediaPicker({ media, onChange, disabled }: {
 
   async function addFiles(files: FileList | null, input: HTMLInputElement | null) {
     if (!files?.length || processing) return;
+    const selectedFiles = Array.from(files);
     if (input) input.value = "";
     setError("");
     setProcessing(true);
     const available = MAX_ACTIVITY_MEDIA - media.length;
     const accepted: PendingActivityMedia[] = [];
     const errors: string[] = [];
-    for (const file of Array.from(files).slice(0, available)) {
+    for (const file of selectedFiles.slice(0, available)) {
       const kind = mediaKindForMimeType(file.type);
       if (!kind) { errors.push("Chỉ hỗ trợ JPG, PNG, WebP, GIF, AVIF, MP4, WebM hoặc MOV."); continue; }
       const maxBytes = kind === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
@@ -117,7 +118,7 @@ export function ActivityMediaPicker({ media, onChange, disabled }: {
       accepted.push({ kind, mimeType: file.type, url, storageKey: crypto.randomUUID(), file, ...metadata });
     }
     if (!mountedRef.current) return;
-    if (files.length > available) errors.push(`Mỗi hoạt động được thêm tối đa ${MAX_ACTIVITY_MEDIA} ảnh hoặc video.`);
+    if (selectedFiles.length > available) errors.push(`Mỗi hoạt động được thêm tối đa ${MAX_ACTIVITY_MEDIA} ảnh hoặc video.`);
     if (errors.length) setError([...new Set(errors)].join(" "));
     if (accepted.length) onChange([...media, ...accepted]);
     setProcessing(false);
